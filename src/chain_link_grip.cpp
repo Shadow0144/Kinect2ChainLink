@@ -26,16 +26,21 @@
 #include <pcl/filters/conditional_removal.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <Eigen/Dense>
-#include <chain_link/gripRequest.h>
-#include <chain_link/gripResponse.h>
 #include <tf/transform_listener.h>
 #include <pcl_ros/transforms.h>
+#include <boost/bind.hpp>
+#include <std_srvs/EmptyRequest.h>
+#include <std_srvs/Empty.h>
+//#include <chain_link/gripRequest.h>
+//#include <chain_link/gripResponse.h>
+#include "chain_link/grip.h"
 
 bool view;
 bool kinect;
 pcl::PointCloud<pcl::PointXYZRGB> previousCloud;
 pcl::PointCloud<pcl::PointXYZRGB> cloud;
 pcl::PointCloud<pcl::PointXYZRGB> nextCloud;
+pcl::PointCloud<pcl::PointXYZRGB> gripCloud;
 bool cloudSet = false;
 TemplateAligner aligner;
 pcl::visualization::PCLVisualizer* viewer;
@@ -53,6 +58,7 @@ const std::string targetCloudName = "targetCloud";
 const std::string templateCloudName = "templateCloud";
 const std::string sceneCloudName = "sceneCloud";
 const std::string sceneCloudMatchName = "sceneCloudMatch";
+const std::string gripCloudName = "gripCloud";
 float x_range = 0.15f; // (Half the range)
 float y_range = 0.15f; // (Half the range)
 float z_range = 0.75f; // (Half the range)
@@ -63,6 +69,7 @@ int align_max_iterations;
 pcl::ConditionalRemoval<pcl::PointXYZRGB> filter;
 const int pointSize = 3;
 tf::TransformListener* listener;
+bool quit;
 
 void SetupParamServer(ros::NodeHandle n)
 {
@@ -236,7 +243,7 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
   }
   else if (event.getKeySym () == "q" && event.keyDown ())
   {
-      viewer->close();
+      quit = true;
   }
   else { }
 }
@@ -262,6 +269,10 @@ void linkKeyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
           linkViewer->updateText("Link #" + boost::lexical_cast<std::string>(linkViewed), 10, 10, linkText);
           linkViewer->updatePointCloud(aligner.GetTemplate(linkViewed), linkCloud);
           unpressedRight = false;
+      }
+      else if (event.getKeySym () == "q")
+      {
+          quit = true;
       }
       else { }
   }
@@ -331,7 +342,7 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 
         /* Temp */
         q++;
-        if (q%4 == 3)
+        if (q%4 == 1)
         {
             printf("Paused\n");
             paused = true;
@@ -390,7 +401,7 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
     else { }
 }
 
-void gripPointsCallback(chain_link::gripRequest request, chain_link::gripResponse response)
+bool gripPointsCallback(chain_link::gripRequest& request, chain_link::gripResponse& response)
 {
     ROS_INFO("Requested grip");
 
@@ -435,7 +446,10 @@ void gripPointsCallback(chain_link::gripRequest request, chain_link::gripRespons
     catch (tf::TransformException ex)
     {
         ROS_ERROR("%s", ex.what());
+        return false;
     }
+
+    return true;
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr& image)
@@ -457,6 +471,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& image)
 
 int main(int argc, char** argv)
 {
+    quit = false;
     kinect = false;
     view = false;
     bool link = false;
@@ -602,6 +617,83 @@ int main(int argc, char** argv)
     }
     else { }
 
+
+    // Create a grip cloud to view
+    // Fill in the cloud data
+    gripCloud.width    = 8*7;
+    gripCloud.height   = 1;
+    gripCloud.is_dense = false;
+    gripCloud.points.resize (gripCloud.width * gripCloud.height);
+
+    gripCloud.points[0].x = 0.035f / 2.0f;
+    gripCloud.points[0].y = 0.09f / 2.0f;
+    gripCloud.points[0].z = 0.08f / 2.0f;
+
+    gripCloud.points[1].x = -0.035f / 2.0f;
+    gripCloud.points[1].y = 0.09f / 2.0f;
+    gripCloud.points[1].z = 0.08f / 2.0f;
+
+    gripCloud.points[2].x = 0.035f / 2.0f;
+    gripCloud.points[2].y = -0.09f / 2.0f;
+    gripCloud.points[2].z = 0.08f / 2.0f;
+
+    gripCloud.points[3].x = -0.035f / 2.0f;
+    gripCloud.points[3].y = -0.09f / 2.0f;
+    gripCloud.points[3].z = 0.08f / 2.0f;
+
+    gripCloud.points[4].x = 0.035f / 2.0f;
+    gripCloud.points[4].y = 0.09f / 2.0f;
+    gripCloud.points[4].z = -0.08f / 2.0f;
+
+    gripCloud.points[5].x = -0.035f / 2.0f;
+    gripCloud.points[5].y = 0.09f / 2.0f;
+    gripCloud.points[5].z = -0.08f / 2.0f;
+
+    gripCloud.points[6].x = 0.035f / 2.0f;
+    gripCloud.points[6].y = -0.09f / 2.0f;
+    gripCloud.points[6].z = -0.08f / 2.0f;
+
+    gripCloud.points[7].x = -0.035f / 2.0f;
+    gripCloud.points[7].y = -0.09f / 2.0f;
+    gripCloud.points[7].z = -0.08f / 2.0f;
+
+    float offset = 0.005f;
+    for (int i = 8; i < gripCloud.points.size();)
+    {
+        int j = (i - 8) / 6;
+
+        gripCloud.points[i].x = gripCloud.points[j].x + offset;
+        gripCloud.points[i].y = gripCloud.points[j].y;
+        gripCloud.points[i].z = gripCloud.points[j].z;
+        i++;
+
+        gripCloud.points[i].x = gripCloud.points[j].x - offset;
+        gripCloud.points[i].y = gripCloud.points[j].y;
+        gripCloud.points[i].z = gripCloud.points[j].z;
+        i++;
+
+        gripCloud.points[i].x = gripCloud.points[j].x;
+        gripCloud.points[i].y = gripCloud.points[j].y + offset;
+        gripCloud.points[i].z = gripCloud.points[j].z;
+        i++;
+
+        gripCloud.points[i].x = gripCloud.points[j].x;
+        gripCloud.points[i].y = gripCloud.points[j].y - offset;
+        gripCloud.points[i].z = gripCloud.points[j].z;
+        i++;
+
+        gripCloud.points[i].x = gripCloud.points[j].x;
+        gripCloud.points[i].y = gripCloud.points[j].y;
+        gripCloud.points[i].z = gripCloud.points[j].z + offset;
+        i++;
+
+        gripCloud.points[i].x = gripCloud.points[j].x;
+        gripCloud.points[i].y = gripCloud.points[j].y;
+        gripCloud.points[i].z = gripCloud.points[j].z - offset;
+        i++;
+    }
+
+
     if (link)
     {
         linkViewer = new pcl::visualization::PCLVisualizer ("Link Clouds");
@@ -611,6 +703,13 @@ int main(int argc, char** argv)
         linkViewer->addText ("Link #" + boost::lexical_cast<std::string>(linkViewed), 10, 10, linkText);
         linkViewer->addPointCloud(aligner.GetTemplate(linkViewed), linkCloud);
         linkViewer->registerKeyboardCallback (linkKeyboardEventOccurred, (void*)&linkViewer);
+
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
+            (aligner.GetMostAlignedTemplate(), 0, 0, 255);
+        linkViewer->addPointCloud(gripCloud.makeShared(), gripColor, gripCloudName);
+        linkViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, gripCloudName);
+
     }
     else { }
 
@@ -625,7 +724,9 @@ int main(int argc, char** argv)
 
     printf("Starting service %s...\n", serviceName.c_str());
 
-    //ros::ServiceServer service = n.advertiseService(serviceName, gripPointsCallback);
+    // Set up the service to provide grip points
+    ros::ServiceServer service;
+    service = n.advertiseService(serviceName, gripPointsCallback);
 
     printf("Running...\n");
 
@@ -640,7 +741,7 @@ int main(int argc, char** argv)
         if (link) linkViewer->spinOnce();
         if (scene) sceneViewer->spinOnce();
     }
-    while (ros::ok() && (!view || !viewer->wasStopped()));
+    while (ros::ok() && !quit);
 
     // Begin shutdown
     if (view) delete viewer;

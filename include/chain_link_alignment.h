@@ -6,6 +6,7 @@
 #include <pcl/registration/ia_ransac.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/visualization/cloud_viewer.h>
+#include <math.h>
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 typedef pcl::PointCloud<pcl::Normal> SurfaceNormals;
@@ -35,6 +36,12 @@ class FeatureCloud
     void Clip(float zMin, float zMax);
     // Translate the cloud
     void Translate(float x, float y, float z);
+    // Rotate the cloud around the x axis
+    void RotateX(float theta);
+    // Rotate the cloud around the y axis
+    void RotateY(float theta);
+    // Rotate the cloud around the z axis
+    void RotateZ(float theta);
 
     // Compute the surface normals and local features
     void processInput ();
@@ -155,7 +162,7 @@ private:
     bool targetLoaded = false;
     pcl::PCDWriter writer;
     // Target
-    float voxel_grid_sizeTarget = 0.005f; // 0.005f
+    float voxel_grid_sizeTarget = 0.0005f; // 0.005f
     float xMinTarget = -10.5f;
     float xMaxTarget = +10.5f;
     float yMinTarget = -10.5f;
@@ -163,16 +170,19 @@ private:
     float zMinTarget = -10.0f;//+0.01f;
     float zMaxTarget = 10.0f;
     // Templates
-    float voxel_grid_sizeTemplate = 0.005f; // 0.005f
+    float voxel_grid_sizeTemplate = 0.0005f; // 0.005f
     //static xMinTemplate = -0.25f;
     //static xMaxTemplate = +0.25f;
     //static yMinTemplate = -0.25f;
     //static yMaxTemplate = +0.25f;
-    float zMinTemplate = -5.5f;
-    float zMaxTemplate = +5.5f;
-    float xOffset = -0.8f;
+    float zMinTemplate = -5.0f;
+    float zMaxTemplate = +0.0f;
+    float xOffset = -0.765f;
     float yOffset = 0.0f;
     float zOffset = 0.0f;
+    float xRot = 0.0f;
+    float yRot = -0.5f * M_PI;
+    float zRot = 0.0f;
 };
 
 #endif /* CHAIN_LINK_ALIGNMENT_H_ */

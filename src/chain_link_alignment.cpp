@@ -109,6 +109,51 @@ FeatureCloud::Translate(float x, float y, float z)
     pcl::transformPointCloud(*xyz_, *xyz_, transform);
 }
 
+// Rotate the cloud around the x axis
+void
+FeatureCloud::RotateX(float theta)
+{
+    float cosT = cosf(theta);
+    float sinT = sinf(theta);
+    Eigen::Matrix4f transform;
+    transform <<
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, cosT, -sinT, 0.0f,
+            0.0f, sinT, cosT, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f;
+    pcl::transformPointCloud(*xyz_, *xyz_, transform);
+}
+
+// Rotate the cloud around the y axis
+void
+FeatureCloud::RotateY(float theta)
+{
+    float cosT = cosf(theta);
+    float sinT = sinf(theta);
+    Eigen::Matrix4f transform;
+    transform <<
+            cosT, 0.0f, sinT, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            -sinT, 0.0f, cosT, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f;
+    pcl::transformPointCloud(*xyz_, *xyz_, transform);
+}
+
+// Rotate the cloud around the z axis
+void
+FeatureCloud::RotateZ(float theta)
+{
+    float cosT = cosf(theta);
+    float sinT = sinf(theta);
+    Eigen::Matrix4f transform;
+    transform <<
+            cosT, -sinT, 0.0f, 0.0f,
+            sinT, cosT, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f;
+    pcl::transformPointCloud(*xyz_, *xyz_, transform);
+}
+
 // Get a pointer to the cloud 3D points
 PointCloud::Ptr
 FeatureCloud::getPointCloud () const
@@ -307,8 +352,11 @@ TemplateAligner::TemplateAligner(char* objectTemplatesFile,
       FeatureCloud template_cloud;
       template_cloud.loadInputCloud (pcd_filename);
       template_cloud.DownSample(voxel_grid_sizeTemplate);
-      template_cloud.Translate(xOffset, yOffset, zOffset);
-      template_cloud.Clip(zMinTemplate, zMaxTemplate); // Clip templates along z!
+      template_cloud.Translate(xOffset, yOffset, zOffset); // Bring back to center
+      //template_cloud.RotateX(xRot); // Rotate to correct angle
+      template_cloud.RotateY(yRot); // Rotate to correct angle
+      //template_cloud.RotateZ(zRot); // Rotate to correct angle
+      //template_cloud.Clip(zMinTemplate, zMaxTemplate); // Clip templates along z!
       template_cloud.processInput();
 
       object_templates.push_back (template_cloud);
