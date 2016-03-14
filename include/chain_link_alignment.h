@@ -162,7 +162,7 @@ private:
     bool targetLoaded = false;
     pcl::PCDWriter writer;
     // Target
-    float voxel_grid_sizeTarget = 0.0005f; // 0.005f
+    float voxel_grid_sizeTarget = 0.005f; // 0.005f
     float xMinTarget = -10.5f;
     float xMaxTarget = +10.5f;
     float yMinTarget = -10.5f;
@@ -170,7 +170,7 @@ private:
     float zMinTarget = -10.0f;//+0.01f;
     float zMaxTarget = 10.0f;
     // Templates
-    float voxel_grid_sizeTemplate = 0.0005f; // 0.005f
+    float voxel_grid_sizeTemplate = 0.005f; // 0.005f
     //static xMinTemplate = -0.25f;
     //static xMaxTemplate = +0.25f;
     //static yMinTemplate = -0.25f;

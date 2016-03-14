@@ -222,7 +222,7 @@ FeatureCloud::computeLocalFeatures ()
 TemplateAlignment::TemplateAlignment () :
   min_sample_distance_ (0.05f),
   max_correspondence_distance_ (0.01f*0.01f),
-  nr_iterations_ (25) // 500
+  nr_iterations_ (50000) // 500
 {
   // Intialize the parameters in the Sample Consensus Intial Alignment (SAC-IA) algorithm
   sac_ia_.setMinSampleDistance (min_sample_distance_);
@@ -418,7 +418,7 @@ TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cl
     }
     else { }
     target_cloud.setInputCloud (cloud);
-    target_cloud.DownSample(voxel_grid_sizeTarget);
+    //target_cloud.DownSample(voxel_grid_sizeTarget);
     target_cloud.Clip(xMinTarget, xMaxTarget, yMinTarget, yMaxTarget, zMinTarget, zMaxTarget);
     target_cloud.processInput();
 
