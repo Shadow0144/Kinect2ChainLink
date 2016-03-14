@@ -1,0 +1,4 @@
+# A list of point clouds to try aligning
+./data/view0.pcd
+./data/view1.pcd
+./data/view2.pcd
