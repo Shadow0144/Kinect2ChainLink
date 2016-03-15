@@ -396,7 +396,6 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
         if (!addSceneCloudOnce)
         {
             sceneViewer->addPointCloud(sceneCloud.makeShared(), sceneCloudName);
-            sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, sceneCloudName);
             sceneViewer->addPointCloud(aligner.GetMostAlignedTemplate(), templateColor, sceneCloudMatchName);
             sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, sceneCloudMatchName);
             addSceneCloudOnce = true;
@@ -568,7 +567,6 @@ bool gripPointsCallback(chain_link::gripRequest& request, chain_link::gripRespon
 void imageCallback(const sensor_msgs::ImageConstPtr& image)
 {
     cv_bridge::CvImagePtr cv_ptr;
-    ROS_INFO("Image received");
     try
     {
       cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
@@ -747,7 +745,7 @@ int main(int argc, char** argv)
 
     if (image)
     {
-        subImg = n.subscribe<sensor_msgs::Image>("/kinect2/sd/image_color", 10, imageCallback);
+        subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color", 10, imageCallback);
     }
     else { }
 
