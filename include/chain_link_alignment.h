@@ -105,6 +105,11 @@ class TemplateAlignment
     float min_sample_distance_;
     float max_correspondence_distance_;
     int nr_iterations_;
+
+    // Constants for the sac_ia
+    const static float minSampleDistance = 0.05f;
+    const static float maxCorrespondenceDistance = 0.01f*0.01f;
+    const static int numIterations = 50; // 500
 };
 
 class TemplateAligner
@@ -122,6 +127,7 @@ public:
     PointCloud::Ptr GetTemplate(int n);
     std::vector<PointCloud::Ptr> GetAlignedTemplates();
     PointCloud::Ptr GetMostAlignedTemplate();
+    int GetMostAlignedTemplateIndex();
     float GetTargetVoxelGridSize();
     void SetTargetVoxelGridSize(float size);
     float GetTemplateVoxelGridSize();
@@ -153,6 +159,7 @@ private:
     std::vector<FeatureCloud> object_templates; // Templates to search for
     FeatureCloud target_cloud; // Align templates to this (Redundant with template_align?)
     std::vector<PointCloud::Ptr> aligned_templates;
+    int best_index; // Index of most aligned template
     PointCloud::Ptr best_cloud; // Most aligned template
     void PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud);
     //bool displayEnabled = false;

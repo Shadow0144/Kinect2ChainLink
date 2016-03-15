@@ -128,7 +128,8 @@ include_directories(
   include
 )
 
-set(HEADER_FILES include/chain_link_grip.h include/chain_link_alignment.h)
+set(HEADER_FILES_CL include/chain_link_grip.h include/chain_link_alignment.h include/chain_link_rotations.h)
+set(HEADER_FILES_TA include/chain_link_alignment.h)
 
 ## Declare a C++ library
 # add_library(chain_link
@@ -142,8 +143,8 @@ add_definitions(${PCL_DEFINITIONS})
 link_directories(${OpenCV_LIBRARY_DIRS})
 add_definitions(${OpenCV_DEFINITIONS})
 
-set(SOURCES_CL src/chain_link_grip.cpp src/chain_link_alignment.cpp ${HEADER_FILES})
-set(SOURCES_TA src/template_alignment.cpp src/chain_link_alignment.cpp ${HEADER_FILES})
+set(SOURCES_CL src/chain_link_grip.cpp src/chain_link_alignment.cpp ${HEADER_FILES_CL})
+set(SOURCES_TA src/template_alignment.cpp src/chain_link_alignment.cpp ${HEADER_FILES_TA})
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries

@@ -220,9 +220,9 @@ FeatureCloud::computeLocalFeatures ()
 //
 
 TemplateAlignment::TemplateAlignment () :
-  min_sample_distance_ (0.05f),
-  max_correspondence_distance_ (0.01f*0.01f),
-  nr_iterations_ (50000) // 500
+  min_sample_distance_ (minSampleDistance),
+  max_correspondence_distance_ (maxCorrespondenceDistance),
+  nr_iterations_ (numIterations) // 500
 {
   // Intialize the parameters in the Sample Consensus Intial Alignment (SAC-IA) algorithm
   sac_ia_.setMinSampleDistance (min_sample_distance_);
@@ -522,6 +522,12 @@ TemplateAligner::GetMostAlignedTemplate()
     return best_cloud;
 }
 
+int
+TemplateAligner::GetMostAlignedTemplateIndex()
+{
+    return best_index;
+}
+
 bool
 TemplateAligner::GetSaveEnabled()
 {
@@ -572,7 +578,7 @@ TemplateAligner::Align()
 
     // Find the best template alignment
     TemplateAlignment::Result best_alignment;
-    int best_index = template_align.findBestAlignment (best_alignment);
+    best_index = template_align.findBestAlignment (best_alignment);
     const FeatureCloud &best_template = object_templates[best_index];
 
     if (outputEnabled)
