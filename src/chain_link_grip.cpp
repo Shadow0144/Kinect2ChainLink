@@ -5,6 +5,10 @@
  *      Author: shadow0144
  */
 
+//
+// <Includes>
+//
+
 #include <iostream>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
@@ -31,56 +35,151 @@
 #include <boost/bind.hpp>
 #include <std_srvs/EmptyRequest.h>
 #include <std_srvs/Empty.h>
+#include <tf_conversions/tf_eigen.h>
 //#include <chain_link/gripRequest.h>
 //#include <chain_link/gripResponse.h>
 #include "chain_link/grip.h"
 #include <chain_link_rotations.h>
 
+//
+// </Includes>
+// <Parameters>
+//
+
+// Service and topic names
+const std::string serviceName = "chain_link_grip";
+const std::string defaultTopic = "/rectangle_detection_node/box_content";
+const std::string defaultDPI = "hd";
+
+// View booleans
 bool view;
 bool kinect;
 bool scene;
-bool debug;
-pcl::PointCloud<pcl::PointXYZRGB> previousCloud;
+bool links;
+bool image;
+
+// Point Clouds
+//pcl::PointCloud<pcl::PointXYZRGB> previousCloud;
 pcl::PointCloud<pcl::PointXYZRGB> cloud;
-pcl::PointCloud<pcl::PointXYZRGB> nextCloud;
+//pcl::PointCloud<pcl::PointXYZRGB> nextCloud;
 pcl::PointCloud<pcl::PointXYZRGB> gripCloud;
-pcl::PointCloud<pcl::PointXYZRGB> debugCloud;
-bool cloudSet = false;
+pcl::PointCloud<pcl::PointXYZRGB> transformedGripCloud;
+pcl::PointCloud<pcl::PointXYZRGB> fullLinkCloud;
+pcl::PointCloud<pcl::PointXYZRGB> sceneCloud;
+
+// Used if trying to combine the next and previous cloud (disabled)
+//bool cloudSet;
+
+// Aligner that tries to find templates in the scene
 TemplateAligner aligner;
+
+// The different viewers
 pcl::visualization::PCLVisualizer* viewer;
 pcl::visualization::PCLVisualizer* linkViewer;
 pcl::visualization::PCLVisualizer* sceneViewer;
-pcl::visualization::PCLVisualizer* debugViewer;
-const std::string imageWindowName = "Kinect2Img";
+
+// Scale of the image view if it's enabled
 const float SCALE = 0.5;
-const cv::Size size(1920 * SCALE, 1080 * SCALE);
-bool paused = false;
-bool cloudAvailable = false;
-int linkViewed = 0;
+const cv::Size windowSize(1920 * SCALE, 1080 * SCALE);
+
+// True if we've aligned a template and have data available
+bool cloudAvailable;
+
+// Used to transform from world space to bin space (or vice-versa)
+tf::TransformListener* listener;
+
+// Filter used for prefiltering the cloud (removes high luminosity)
+pcl::ConditionalRemoval<pcl::PointXYZRGB> filter;
+
+// Strings for updating text and point clouds in the views and for naming windows
+const std::string imageWindowName = "Kinect2Img";
 const std::string linkText = "linkText";
-const std::string linkCloud = "linkCloud";
+const std::string pauseText = "pauseText";
+const std::string linkCloudName = "linkCloud";
 const std::string targetCloudName = "targetCloud";
 const std::string templateCloudName = "templateCloud";
 const std::string sceneCloudName = "sceneCloud";
 const std::string sceneCloudMatchName = "sceneCloudMatch";
 const std::string gripCloudName = "gripCloud";
-const std::string debugCloudName = "debugCloud";
-float x_range = 0.15f; // (Half the range)
-float y_range = 0.15f; // (Half the range)
-float z_range = 0.75f; // (Half the range)
-int rMax = 50;
-int gMax = 50;
-int bMax = 50;
+const std::string fullLinkCloudName = "fullLinkCloud";
+
+// Viewer parameters to ensure clouds are only added once
+bool addOnce;
+bool addSceneCloudOnce;
+
+// Parameter server parameters
+float x_range; // (Half the range)
+float y_range; // (Half the range)
+float z_range; // (Half the range)
+int rMax;
+int gMax;
+int bMax;
 int align_max_iterations;
-pcl::ConditionalRemoval<pcl::PointXYZRGB> filter;
+
+// Keyboard checks (non-functional)
+bool unpressedLeft;
+bool unpressedRight;
+
+// Current link displayed in the link viewer
+int linkViewed;
+const int linkX = 10;
+const int linkY = 15;
+const int linkFont = 15;
+
+// Point resizing parameters for point clouds
 const int pointSize = 3;
 const int boldPointSize = 5;
-tf::TransformListener* listener;
-bool quit;
-bool pauseOption;
-int p; // Auto-pause parameters
-int q = 1;
 
+// Whether to alignment process is paused or not
+bool paused;
+
+// Pause parameters and display settings
+bool pauseOption; // If true, auto-pausing is enabled
+int p; // Pause modulus (> 0)
+int q; // Counter of alignments
+const int pauseX = 5;
+const int pauseY = 500;
+const int pauseFont = 25;
+
+// Set to true to exit
+bool quit;
+
+// Transform and index of best point to provide when the service is called and the time of the alignment
+tf::Transform transform;
+ros::Time alignTime;
+bool responseReady;
+int gripNum;
+
+// Put this at the top for quick reference and changes
+// Call this first!
+void SetUpParameters()
+{
+    //cloudSet = false;
+    paused = false;
+    cloudAvailable = false;
+    linkViewed = 0;
+    x_range = 0.3f; // (Half the range)
+    y_range = 0.3f; // (Half the range)
+    z_range = 1.75f; // (Half the range)
+    rMax = 150;
+    gMax = 150;
+    bMax = 150;
+    p = 1;
+    q = 1;
+    unpressedLeft = true;
+    unpressedRight = true;
+    addOnce = false;
+    addSceneCloudOnce = false;
+    responseReady = true;
+}
+
+//
+// </Parameters>
+// <ParamServer>
+//
+
+// Sets up the ROS param server with default values unless values are already written,
+// In which case, it sets these values to those
 void SetupParamServer(ros::NodeHandle n)
 {
     // Set values if they don't already exist so they are advertized
@@ -116,41 +215,7 @@ void SetupParamServer(ros::NodeHandle n)
         n.setParam(align_max_iterations_param, aligner.GetMaxIterations());
 }
 
-void FilterCloud()
-{
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloudPtr = cloud.makeShared();
-
-    int s = cloud.size();
-    printf("Initially filter cloud of size %d points... ", s);
-
-    filter.setInputCloud(cloudPtr);
-    filter.filter(cloud);
-
-    printf("Removed %d yellow points.\n", s - cloud.size());
-
-    pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
-    kdtree.setInputCloud (cloudPtr);
-
-    pcl::PointXYZRGB searchPoint;
-    searchPoint.x = 0;
-    searchPoint.y = 0;
-    searchPoint.z = 0;
-
-    // K nearest neighbor search
-    int K = 1;
-    std::vector<int> pointIdxNKNSearch(K);
-    std::vector<float> pointNKNSquaredDistance(K);
-    kdtree.nearestKSearch (searchPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
-
-    float x = cloud.points[ pointIdxNKNSearch[0] ].x;
-    float y = cloud.points[ pointIdxNKNSearch[0] ].y;
-    float z = cloud.points[ pointIdxNKNSearch[0] ].z;
-    aligner.SetTargetWindow(
-                x - x_range, x + x_range,
-                y - y_range, y + y_range,
-                z - z_range, z + z_range);
-}
-
+// Checks for and updates parameters from the ROS param server
 void HandleParams(ros::NodeHandle n)
 {
     float targetVoxelSize, templateVoxelSize,
@@ -241,25 +306,96 @@ void HandleParams(ros::NodeHandle n)
     else { }
 }
 
+//
+// </ParamServer>
+// <Filtering>
+//
+
+// Removes points over a certain illuminacity and clips the search window
+void FilterCloud()
+{
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloudPtr = cloud.makeShared();
+
+    int s = cloud.size();
+    printf("Initially filter cloud of size %d points... ", s);
+
+    filter.setInputCloud(cloudPtr);
+    filter.filter(cloud);
+
+    printf("Removed %d yellow points.\n", (int)(s - cloud.size()));
+
+    pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
+    kdtree.setInputCloud (cloudPtr);
+
+    pcl::PointXYZRGB searchPoint;
+    searchPoint.x = 0;
+    searchPoint.y = 0;
+    searchPoint.z = 0;
+
+    // K nearest neighbor search
+    int K = 1;
+    std::vector<int> pointIdxNKNSearch(K);
+    std::vector<float> pointNKNSquaredDistance(K);
+    kdtree.nearestKSearch (searchPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
+
+    float x = cloud.points[ pointIdxNKNSearch[0] ].x;
+    float y = cloud.points[ pointIdxNKNSearch[0] ].y;
+    float z = cloud.points[ pointIdxNKNSearch[0] ].z;
+    aligner.SetTargetWindow(
+                x - x_range, x + x_range,
+                y - y_range, y + y_range,
+                z - z_range, z + z_range);
+}
+
+//
+// </Filtering>
+// <Pausing>
+//
+
+// Pauses/unpauses the alignment procedure (allowing the views to be more easily used)
+bool test = false;
+void Pause(bool pause)
+{
+    paused = pause;
+
+    if (paused)
+    {
+        if (view) viewer->updateText("Paused", pauseX, pauseY, pauseFont, 1.0, 1.0, 1.0, pauseText);
+        if (scene) sceneViewer->updateText("Paused", pauseX, pauseY, pauseFont, 1.0, 1.0, 1.0, pauseText);
+        if (links) linkViewer->updateText("Paused", pauseX, pauseY, pauseFont, 1.0, 1.0, 1.0, pauseText);
+        printf("Paused\n");
+    }
+    else
+    {
+        if (view) viewer->updateText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
+        if (scene) sceneViewer->updateText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
+        if (links) linkViewer->updateText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
+        printf("Unpaused\n");
+    }
+}
+
+//
+// </Pausing>
+// <Keyboard Callbacks>
+//
+
+// Keyboard event callback for non-link views
 void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
                         void* viewer_void)
 {
   //boost::shared_ptr<pcl::visualization::PCLVisualizer> eviewer = *static_cast<boost::shared_ptr<pcl::visualization::PCLVisualizer> *> (viewer_void);
   if (event.getKeySym () == "p" && event.keyDown ())
   {
-      paused = !(paused);
-      if (paused) { printf("Paused\n"); }
-      else { printf("Unpaused\n"); }
+      Pause(!paused);
   }
-  else if (event.getKeySym () == "q" && event.keyDown ())
+  else if (event.getKeySym () == "q")
   {
       quit = true;
   }
   else { }
 }
 
-bool unpressedLeft = true;
-bool unpressedRight = true;
+// Keyboard event callback for the link view
 void linkKeyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
                         void* link_viewer_void)
 {
@@ -269,19 +405,20 @@ void linkKeyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
       if (unpressedLeft && (event.getKeyCode() == 60 || event.getKeyCode() == 44)) // "<" || ","
       {
           linkViewed = (--linkViewed+aligner.GetNumTemplates())%aligner.GetNumTemplates();
-          linkViewer->updateText("Link #" + boost::lexical_cast<std::string>(linkViewed), 10, 10, linkText);
-          linkViewer->updatePointCloud(aligner.GetTemplate(linkViewed), linkCloud);
+          linkViewer->updateText("Link #" + boost::lexical_cast<std::string>(linkViewed), linkX, linkY, linkFont, 1.0, 1.0, 1.0, linkText);
+          linkViewer->updatePointCloud(aligner.GetTemplate(linkViewed), linkCloudName);
           unpressedLeft = false;
       }
       else if (unpressedRight && (event.getKeyCode() == 62 || event.getKeyCode() == 46)) // ">" || "."
       {
           linkViewed = (++linkViewed+aligner.GetNumTemplates())%aligner.GetNumTemplates();
           linkViewer->updateText("Link #" + boost::lexical_cast<std::string>(linkViewed), 10, 10, linkText);
-          linkViewer->updatePointCloud(aligner.GetTemplate(linkViewed), linkCloud);
+          linkViewer->updatePointCloud(aligner.GetTemplate(linkViewed), linkCloudName);
           unpressedRight = false;
       }
       else if (event.getKeySym () == "q")
       {
+          ROS_INFO("Quitting");
           quit = true;
       }
       else { }
@@ -301,14 +438,19 @@ void linkKeyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
   else { }
 }
 
-bool addOnce = false;
+//
+// </Keyboard Callbacks>
+// <ROS Callbacks>
+//
+
 // sensor_msgs/PointCloud2
 void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 {
     if (!paused || !cloudAvailable)
     {
-        pcl::fromROSMsg(*points, nextCloud);
-        if (cloudSet)
+        pcl::fromROSMsg(*points, cloud);
+        //pcl::fromROSMsg(*points, nextCloud);
+        /*if (cloudSet)
         {
             cloud = previousCloud + nextCloud;
         }
@@ -317,7 +459,7 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             cloud = nextCloud;
             //cloudSet = true;
         }
-        previousCloud = nextCloud;
+        previousCloud = nextCloud;*/
 
         ROS_INFO("Cloud received");
         FilterCloud();
@@ -325,42 +467,193 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 
         aligner.Align();
 
-        cloudAvailable = true;
-
-        if (view)
+        try
         {
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> targetColor
-                (aligner.GetTargetCloud(), 0, 255, 255);
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> templateColor
-                (aligner.GetMostAlignedTemplate(), 0, 255, 0);
-            if (!addOnce)
+            tf::StampedTransform world;
+
+            if (!kinect)
             {
-                viewer->addPointCloud(aligner.GetTargetCloud(), targetColor, targetCloudName);
-                viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, targetCloudName);
-                viewer->addPointCloud(aligner.GetMostAlignedTemplate(), templateColor, templateCloudName);
-                viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, templateCloudName);
-                addOnce = true;
+                listener->lookupTransform("/kinect2_link", "/container",
+                                       ros::Time(0), world);
             }
             else
             {
-                viewer->updatePointCloud(aligner.GetTargetCloud(), targetColor, targetCloudName);
-                viewer->updatePointCloud(aligner.GetMostAlignedTemplate(), templateColor, templateCloudName);
+                listener->lookupTransform("/kinect2_link", "/kinect2_link",
+                                       ros::Time(0), world);
             }
+
+            // Apply the inverse rotation from the header
+            Eigen::Vector3f t;
+            Eigen::Quaternionf r;
+
+            //tf::vectorTFToEigen(world.getOrigin(), t);
+            //tf::quaternionTFToEigen(world.getRotation(), r);
+
+            float ww = world.getOrigin().w();
+            t[0] = world.getOrigin().x() / ww;
+            t[1] = world.getOrigin().y() / ww;
+            t[2] = world.getOrigin().z() / ww;
+            //t[3] = world.getOrigin().w();
+
+            r.x() = world.getRotation().x();
+            r.y() = world.getRotation().y();
+            r.z() = world.getRotation().z();
+            r.w() = world.getRotation().w();
+
+            // Apply container transform to grip points
+            pcl::PointCloud<pcl::PointXYZRGB> transformedGripCloud;
+            pcl::transformPointCloud(gripCloud, transformedGripCloud, t, r);
+
+            // Select one grip point (the one with the lowest z should always be the best)
+            int index = 0;
+            int minZ = transformedGripCloud.points[index].z;
+            for (int i = 1; i < transformedGripCloud.points.size(); i++)
+            {
+                if (transformedGripCloud.points[i].z < minZ) // Add check that rotation is valid! // TODO
+                {
+                    minZ = transformedGripCloud.points[i].z;
+                    index = i;
+                }
+                else { }
+            }
+
+            gripNum = index;
+
+            // Link -> Container -> World
+            Eigen::Matrix3f linkMat = GripRots[gripNum];
+            tf::StampedTransform link;
+
+            float w = sqrt(1.0f + linkMat(0,0) + linkMat(1,1) + linkMat(2,2)) / 2.0f;
+            float w4 = (4.0f * w);
+            float x = (linkMat(2,1) - linkMat(1,2)) / w4;
+            float y = (linkMat(0,2) - linkMat(2,0)) / w4;
+            float z = (linkMat(1,0) - linkMat(0,1)) / w4;
+
+            link.getRotation().setX(x);
+            link.getRotation().setY(y);
+            link.getRotation().setZ(z);
+            link.getRotation().setW(w);
+
+            link.getOrigin().setX(GripPoints[gripNum][0]);
+            link.getOrigin().setY(GripPoints[gripNum][1]);
+            link.getOrigin().setZ(GripPoints[gripNum][2]);
+            link.getOrigin().setW(1.0f);
+
+            // -> Container -> World
+            Eigen::Matrix4f containerMat = aligner.GetBestTransform();
+            tf::StampedTransform container;
+
+            w = sqrt(1.0f + containerMat(0,0) + containerMat(1,1) + containerMat(2,2)) / 2.0f;
+            w4 = (4.0f * w);
+            x = (containerMat(2,1) - containerMat(1,2)) / w4;
+            y = (containerMat(0,2) - containerMat(2,0)) / w4;
+            z = (containerMat(1,0) - containerMat(0,1)) / w4;
+
+            container.getRotation().setX(x);
+            container.getRotation().setY(y);
+            container.getRotation().setZ(z);
+            container.getRotation().setW(w);
+
+            container.getOrigin().setX(containerMat(3,0));
+            container.getOrigin().setY(containerMat(3,1));
+            container.getOrigin().setZ(containerMat(3,2));
+            container.getOrigin().setW(containerMat(3,3));
+
+            // -> World
+            transform = world * container * link;
+
+            responseReady = true;
+
+            alignTime = ros::Time::now();
+
+            cloudAvailable = true;
+
+            if (scene) // If the scene viewer is available
+            {
+                pcl::PointCloud<pcl::PointXYZRGB> axes;
+                axes.width    = 4;
+                axes.height   = 1;
+                axes.is_dense = false;
+                axes.points.resize (axes.width * axes.height);
+
+                axes.points[0].x = 0.0f;
+                axes.points[0].y = 0.0f;
+                axes.points[0].z = 0.0f;
+
+                axes.points[1].x = 0.05f;
+                axes.points[1].y = 0.0f;
+                axes.points[1].z = 0.0f;
+
+                axes.points[2].x = 0.0f;
+                axes.points[2].y = 0.05f;
+                axes.points[2].z = 0.0f;
+
+                axes.points[3].x = 0.0f;
+                axes.points[3].y = 0.0f;
+                axes.points[3].z = 0.05f;
+
+                pcl::transformPointCloud(axes, axes, t, r);
+
+                pcl::PointCloud<pcl::PointXYZRGB> rotationCloud;
+                pcl::PointCloud<pcl::PointXYZRGB>::Ptr rotationCloudShared = rotationCloud.makeShared();
+                pcl::transformPointCloud(fullLinkCloud, rotationCloud, t, r);
+
+                pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> fullLinkColor
+                    (rotationCloudShared, 255, 255, 255);
+                sceneViewer->updatePointCloud(rotationCloudShared, fullLinkColor, fullLinkCloudName);
+
+                sceneViewer->removeShape("x");
+                sceneViewer->removeShape("y");
+                sceneViewer->removeShape("z");
+                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[1], 255, 255, 0, "x");
+                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[2], 0, 255, 255, "y");
+                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[3], 255, 0, 255, "z");
+
+                pcl::PointCloud<pcl::PointXYZRGB>::Ptr tgcShared = transformedGripCloud.makeShared();
+                pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
+                    (tgcShared, 255, 0, 0);
+                sceneViewer->updatePointCloud(tgcShared, gripColor, gripCloudName);
+            }
+            else { }
+
+            if (view)
+            {
+                /*pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> targetColor
+                    (aligner.GetTargetCloud(), 0, 255, 255);*/
+                pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> templateColor
+                    (aligner.GetMostAlignedTemplate(), 0, 255, 0);
+                if (!addOnce)
+                {
+                    viewer->addPointCloud(aligner.GetTargetCloud(), targetCloudName);
+                    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, targetCloudName);
+                    viewer->addPointCloud(aligner.GetMostAlignedTemplate(), templateColor, templateCloudName);
+                    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, templateCloudName);
+                    addOnce = true;
+                }
+                else
+                {
+                    viewer->updatePointCloud(aligner.GetTargetCloud(), targetCloudName);
+                    viewer->updatePointCloud(aligner.GetMostAlignedTemplate(), templateColor, templateCloudName);
+                }
+            }
+            else { }
         }
-        else { }
+        catch (tf::TransformException ex)
+        {
+            ROS_ERROR("%s", ex.what());
+            return;
+        }
 
         q++;
-        if (q%p == 0 && pauseOption)
+        if (pauseOption && q%p == 0)
         {
-            printf("Paused\n");
-            paused = true;
+            Pause(!paused);
         }
         else { }
     }
     else { }
 }
 
-bool addSceneCloudOnce = false;
 // sensor_msgs/PointCloud2
 void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 {
@@ -368,7 +661,8 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
     {
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> templateColor
             (aligner.GetMostAlignedTemplate(), 0, 255, 0);
-        pcl::PointCloud<pcl::PointXYZRGB> sceneCloud;
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> fullLinkColor
+            (fullLinkCloud.makeShared(), 255, 255, 255);
 
         ROS_INFO("Scene Received");
 
@@ -379,6 +673,8 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
                 sensor_msgs::PointCloud2 transformed;
 
                 pcl_ros::transformPointCloud("/container", *points, transformed, *listener);
+
+                ROS_INFO("Scene Transformed");
 
                 pcl::fromROSMsg(transformed, sceneCloud);
             }
@@ -404,174 +700,63 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
         {
             sceneViewer->updatePointCloud(sceneCloud.makeShared(), sceneCloudName);
             sceneViewer->updatePointCloud(aligner.GetMostAlignedTemplate(), templateColor, sceneCloudMatchName);
+            sceneViewer->updatePointCloud(fullLinkCloud.makeShared(), fullLinkColor, fullLinkCloudName);
         }
     }
     else { }
 }
 
-bool axesAdded = false;
 bool gripPointsCallback(chain_link::gripRequest& request, chain_link::gripResponse& response)
 {
     ROS_INFO("Requested grip");
 
     response.header = std_msgs::Header();
-    response.header.stamp = ros::Time::now();
 
-    tf::StampedTransform transform;
-
-    if (!cloudAvailable)
+    if (!cloudAvailable || !responseReady)
     {
+        ROS_INFO("No grip ready yet");
         return -1;
     }
     else { }
 
-    try
-    {
-        if (!kinect)
-        {
-            listener->lookupTransform("/kinect2_link", "/container",
-                                   ros::Time(0), transform);
-        }
-        else
-        {
-            listener->lookupTransform("/kinect2_link", "/kinect2_link",
-                                   ros::Time(0), transform);
-        }
+    // Stamp with when we aligned
+    response.header.stamp = alignTime;
 
-        // Apply the inverse rotation from the header
-        Eigen::Vector3f t (
-            transform.getOrigin().getX(),
-            transform.getOrigin().getY(),
-            transform.getOrigin().getZ());
-        Eigen::Quaternionf r (
-            transform.getRotation().getW(),
-            transform.getRotation().getX(),
-            transform.getRotation().getY(),
-            transform.getRotation().getZ());
+    // Put the data into the response
+    response.pose.position.x = transform.getOrigin().getX();
+    response.pose.position.y = transform.getOrigin().getY();
+    response.pose.position.z = transform.getOrigin().getZ();
 
-        //Eigen::Quaternionf q (Views[aligner.GetMostAlignedTemplateIndex()]);
-        // This could be made much more efficient by multiplying the rotations together
+    response.pose.orientation.x = transform.getRotation().x();
+    response.pose.orientation.y = transform.getRotation().y();
+    response.pose.orientation.z = transform.getRotation().z();
+    response.pose.orientation.w = transform.getRotation().w();
 
-
-
-        // Apply to grip points
-        pcl::PointCloud<pcl::PointXYZRGB> transformedGripCloud;
-        pcl::transformPointCloud(gripCloud, transformedGripCloud, t, r);
-
-        // Select one grip point (the one with the lowest z should always be the best)
-        int index = 0;
-        int minZ = transformedGripCloud.points[index].z;
-        for (int i = 1; i < transformedGripCloud.points.size(); i++)
-        {
-            if (transformedGripCloud.points[i].z < minZ)
-            {
-                minZ = transformedGripCloud.points[i].z;
-                index = i;
-            }
-            else { }
-        }
-
-        // Put the data into the response
-        response.pose.position.x = transformedGripCloud.points[index].x;
-        response.pose.position.y = transformedGripCloud.points[index].y;
-        response.pose.position.z = transformedGripCloud.points[index].z;
-
-// Fix rotation
-        response.pose.orientation.x = transform.getRotation().x();
-        response.pose.orientation.y = transform.getRotation().y();
-        response.pose.orientation.z = transform.getRotation().z();
-        response.pose.orientation.w = transform.getRotation().w();
-
-        ROS_INFO("Grip sent:");
-        ROS_INFO("Position x: %f, y: %f, z: %f",
-                 response.pose.position.x,
-                 response.pose.position.y,
-                 response.pose.position.z);
-        ROS_INFO("Rotation x: %f, y: %f, z: %f, w: %f",
-                 response.pose.orientation.x,
-                 response.pose.orientation.y,
-                 response.pose.orientation.z,
-                 response.pose.orientation.w);
-
-        if (debug)
-        {
-            pcl::PointCloud<pcl::PointXYZRGB> axes;
-            axes.width    = 4;
-            axes.height   = 1;
-            axes.is_dense = false;
-            axes.points.resize (axes.width * axes.height);
-
-            axes.points[0].x = 0.0f;
-            axes.points[0].y = 0.0f;
-            axes.points[0].z = 0.0f;
-
-            axes.points[1].x = 0.1f;
-            axes.points[1].y = 0.0f;
-            axes.points[1].z = 0.0f;
-
-            axes.points[2].x = 0.0f;
-            axes.points[2].y = 0.1f;
-            axes.points[2].z = 0.0f;
-
-            axes.points[3].x = 0.0f;
-            axes.points[3].y = 0.0f;
-            axes.points[3].z = 0.1f;
-
-            pcl::transformPointCloud(axes, axes, t, r);
-
-            pcl::PointCloud<pcl::PointXYZRGB> rotCloud;
-            pcl::transformPointCloud(debugCloud, rotCloud, t, r);
-
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> debugCloudColor
-                (aligner.GetMostAlignedTemplate(), 255, 255, 255);
-            debugViewer->updatePointCloud(rotCloud.makeShared(), debugCloudColor, debugCloudName);
-
-            debugViewer->removeAllShapes();
-            debugViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[1], 255, 0, 0, "x");
-            debugViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[2], 0, 255, 0, "y");
-            debugViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[3], 0, 0, 255, "z");
-
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr tgcShared = transformedGripCloud.makeShared();
-
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
-                (transformedGripCloud.makeShared(), 255, 0, 0);
-            debugViewer->updatePointCloud(tgcShared, gripColor, gripCloudName);
-
-            if (scene) // Add it to the scene too if both are enabled
-            {
-                sceneViewer->updatePointCloud(rotCloud.makeShared(), debugCloudColor, debugCloudName);
-                sceneViewer->removeAllShapes();
-                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[1], 150, 0, 0, "x");
-                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[2], 0, 150, 0, "y");
-                sceneViewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[3], 0, 0, 150, "z");
-
-                pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
-                    (tgcShared, 255, 0, 0);
-                sceneViewer->updatePointCloud(tgcShared, gripColor, gripCloudName);
-            }
-            else { }
-
-            axesAdded = true;
-        }
-        else { }
-    }
-    catch (tf::TransformException ex)
-    {
-        ROS_ERROR("%s", ex.what());
-        return false;
-    }
+    ROS_INFO("Grip sent:");
+    ROS_INFO("Position x: %f, y: %f, z: %f",
+             response.pose.position.x,
+             response.pose.position.y,
+             response.pose.position.z);
+    ROS_INFO("Rotation x: %f, y: %f, z: %f, w: %f",
+             response.pose.orientation.x,
+             response.pose.orientation.y,
+             response.pose.orientation.z,
+             response.pose.orientation.w);
 
     return true;
 }
 
+// sensor_msgs/ImageConstPtr
 void imageCallback(const sensor_msgs::ImageConstPtr& image)
 {
     cv_bridge::CvImagePtr cv_ptr;
     try
     {
       cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
-      cv::resize(cv_ptr->image, cv_ptr->image, size);
+      cv::resize(cv_ptr->image, cv_ptr->image, windowSize);
       cv::imshow(imageWindowName, cv_ptr->image);
+      cv::updateWindow(imageWindowName);
+      cv::waitKey(1);
     }
     catch (cv_bridge::Exception& e)
     {
@@ -580,29 +765,56 @@ void imageCallback(const sensor_msgs::ImageConstPtr& image)
     }
 }
 
+//
+// </ROS Callbacks>
+// <Main>
+//
+
 int main(int argc, char** argv)
 {
+    SetUpParameters();
+
     quit = false;
     kinect = false;
     view = false;
-    debug = false;
     scene = false;
-    bool link = false;
-    bool image = false;
-    std::string topic = "/rectangle_detection_node/box_content";
-    std::string dpi = "hd";
-    std::string serviceName = "chain_link_grip";
-    char* templates;
+    links = false;
+    image = false;
 
-    printf("Starting...\n");
+    std::string dpi = defaultDPI;
+    std::string topic = defaultTopic;
+
+    char* templates;
 
     // Check if we have enough parameters
     if (argc < 2)
     {
         printf ("No templates file given!\n");
-        printf ("Use ./chain_link_grip <templates.txt> [-a] [-k [<sd or qhd or hd>] or -t <topic>] [-l] [-v] [-i] [-p <interval>]\n");
+        printf ("Use ./chain_link_grip <templates.txt> [-a] [-k [<sd or qhd or hd>] or -t <topic>] [-l] [-s] [-i] [-p <interval>]\n");
         return (-1);
     }
+    else { }
+
+    // Print out help text if requested
+    if (strcmp(argv[1], "-h") == 0)
+    {
+        printf(
+               "%s\n%s\n\n%s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n%-3s %-13s %-20s\n\n",
+
+               "chain_link_grip searches a bin containing chain links for good points and an angle for a robot to grip and extract a single chain link and returns that point and orientation.",
+               "Parameters can be in any order.",
+               "Parameters:",
+               "", "-k [dpi]", "Use the Kinect data directly; dpi: hd, sd, or qhd (hd is default)",
+               "", "-t <topic>", "Use a different point cloud Topic as the input specified by <topic>",
+               "", "-a", "Show the Aligned point clouds used by the program to find an alignment",
+               "", "-l", "Show the aligned chain Link template point clouds",
+               "", "-s", "Show the match made in the full Scene",
+               "", "-i", "Show the color scene as an Image",
+               "", "-p <interval>", "Pauses the alignment procedure every <interval> matches (must be > 0)"
+               );
+        return 0;
+    }
+    else { }
 
     // Make sure our templates file exists
     templates = argv[1];
@@ -617,20 +829,16 @@ int main(int argc, char** argv)
     // Addtional parameters if any
     if (argc > 2)
     {
-        if (strcmp(argv[2], "-h") == 0)
-        {
-            printf(""); // TODO
-            return 0;
-        }
-        else { }
-
         for (int i = 2; i < argc; i++)
         {
             /* Various input types */
             if (strcmp(argv[i], "-k") == 0)
             {
                 kinect = true;
-                if (argc > i+1)
+                if (argc > i+1 &&
+                        (strcmp(argv[i], "hd") == 0 ||
+                         strcmp(argv[i], "sd") == 0 ||
+                         strcmp(argv[i], "qhd") == 0))
                 {
                     dpi = argv[++i];
                 }
@@ -658,19 +866,15 @@ int main(int argc, char** argv)
             }
             else if (strcmp(argv[i], "-l") == 0)
             {
-                link = true;
+                links = true;
             }
-            else if (strcmp(argv[i], "-v") == 0)
+            else if (strcmp(argv[i], "-s") == 0)
             {
                 scene = true;
             }
             else if (strcmp(argv[i], "-i") == 0)
             {
                 image = true;
-            }
-            else if (strcmp(argv[i], "-d") == 0)
-            {
-                debug = true;
             }
             /* /Display options */
             /* Other */
@@ -681,11 +885,18 @@ int main(int argc, char** argv)
                     if (argc > i+1)
                     {
                         p = atoi(argv[++i]);
-                        if (p < 1)
+                        if (p < 1) //if (p < 0)
                         {
+                            //printf ("Inverval must be non-negative!\n");
                             printf ("Inverval must be > 0!\n");
                             return (-1);
                         }
+                        /*else if (p == 0)
+                        {
+                            p = 1;
+                            paused = true; // Need to set it up like this since we haven't made the views yet
+                        }
+                        else { }*/
                         pauseOption = true;
                     }
                     else
@@ -704,6 +915,8 @@ int main(int argc, char** argv)
         }
     }
     else { }
+
+    printf("Starting...\n");
 
     ros::init(argc, argv, "chain_link_grip");
 
@@ -741,19 +954,19 @@ int main(int argc, char** argv)
 
     printf("Subscribing to topic %s...\n", topic.c_str());
 
-    sub = n.subscribe<sensor_msgs::PointCloud2>(topic, 10, pointsCallback);
-
     if (image)
     {
-        subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color", 10, imageCallback);
+        subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color_rect", 100, imageCallback);
     }
     else { }
 
     if (scene)
     {
-        subScene = n.subscribe<sensor_msgs::PointCloud2>("/kinect2/sd/points", 10, sceneCallback);
+        subScene = n.subscribe<sensor_msgs::PointCloud2>("/kinect2/hd/points", 100, sceneCallback);
     }
     else { }
+
+    sub = n.subscribe<sensor_msgs::PointCloud2>(topic, 100, pointsCallback);
 
     if (view)
     {
@@ -767,6 +980,9 @@ int main(int argc, char** argv)
 
     // Set up the points and rotations of the views and grips
     InitPointsAndRotatations();
+
+    // Realign all the template clouds correctly
+    aligner.ApplyTransformations(Views);
 
     // Create a grip cloud to view
     // Fill in the cloud data
@@ -782,52 +998,15 @@ int main(int argc, char** argv)
         gripCloud.points[i].z = GripPoints[i][2];
     }
 
-    /*float offset = 0.0025f;
-    for (int i = 8; i < gripCloud.points.size();)
-    {
-        int j = (i - 8) / 6;
-
-        gripCloud.points[i].x = gripCloud.points[j].x + offset;
-        gripCloud.points[i].y = gripCloud.points[j].y;
-        gripCloud.points[i].z = gripCloud.points[j].z;
-        i++;
-
-        gripCloud.points[i].x = gripCloud.points[j].x - offset;
-        gripCloud.points[i].y = gripCloud.points[j].y;
-        gripCloud.points[i].z = gripCloud.points[j].z;
-        i++;
-
-        gripCloud.points[i].x = gripCloud.points[j].x;
-        gripCloud.points[i].y = gripCloud.points[j].y + offset;
-        gripCloud.points[i].z = gripCloud.points[j].z;
-        i++;
-
-        gripCloud.points[i].x = gripCloud.points[j].x;
-        gripCloud.points[i].y = gripCloud.points[j].y - offset;
-        gripCloud.points[i].z = gripCloud.points[j].z;
-        i++;
-
-        gripCloud.points[i].x = gripCloud.points[j].x;
-        gripCloud.points[i].y = gripCloud.points[j].y;
-        gripCloud.points[i].z = gripCloud.points[j].z + offset;
-        i++;
-
-        gripCloud.points[i].x = gripCloud.points[j].x;
-        gripCloud.points[i].y = gripCloud.points[j].y;
-        gripCloud.points[i].z = gripCloud.points[j].z - offset;
-        i++;
-    }*/
-
-    if (link)
+    if (links)
     {
         linkViewer = new pcl::visualization::PCLVisualizer ("Link Clouds");
         linkViewer->initCameraParameters ();
         linkViewer->addCoordinateSystem (0.1);
         linkViewer->setBackgroundColor (0.25, 0.25, 0.25, 0);
-        linkViewer->addText ("Link #" + boost::lexical_cast<std::string>(linkViewed), 10, 10, linkText);
-        linkViewer->addPointCloud(aligner.GetTemplate(linkViewed), linkCloud);
+        linkViewer->addText ("Link #" + boost::lexical_cast<std::string>(linkViewed), linkX, linkY, linkFont, 1.0, 1.0, 1.0, linkText);
+        linkViewer->addPointCloud(aligner.GetTemplate(linkViewed), linkCloudName);
         linkViewer->registerKeyboardCallback (linkKeyboardEventOccurred, (void*)&linkViewer);
-
 
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
             (gripCloud.makeShared(), 255, 0, 0);
@@ -836,62 +1015,51 @@ int main(int argc, char** argv)
     }
     else { }
 
-    if (debug)
+    if (scene)
     {
-        debugViewer = new pcl::visualization::PCLVisualizer ("Debug");
-        debugViewer->initCameraParameters ();
-        debugViewer->addCoordinateSystem (0.1);
-        debugViewer->setBackgroundColor (0.0, 0.0, 0.0, 0);
+        sceneViewer = new pcl::visualization::PCLVisualizer ("Scene");
+        sceneViewer->initCameraParameters ();
+        sceneViewer->addCoordinateSystem (0.1);
+        sceneViewer->setBackgroundColor (0.15, 0.15, 0.15, 0);
+        sceneViewer->registerKeyboardCallback (keyboardEventOccurred, (void*)&sceneViewer);
 
         const std::string &pcd_file = "./data/ChainLinkResizeCenter.pcd";
-        if (pcl::io::loadPCDFile (pcd_file, debugCloud) == -1)
+        if (pcl::io::loadPCDFile (pcd_file, fullLinkCloud) == -1)
         {
             printf ("Error loading file %s\n", pcd_file.c_str());
             return -1;
         }
         else { }
 
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> debugCloudColor
-            (aligner.GetMostAlignedTemplate(), 255, 255, 255);
-        debugViewer->addPointCloud(debugCloud.makeShared(), debugCloudColor, debugCloudName);
-        debugViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, debugCloudName);
+        // Add the matched template to the scene too
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> fullLinkColor
+            (fullLinkCloud.makeShared(), 255, 255, 255);
+        sceneViewer->addPointCloud(fullLinkCloud.makeShared(), fullLinkColor, fullLinkCloudName);
+        sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, fullLinkCloudName);
 
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
             (gripCloud.makeShared(), 255, 0, 0);
-        debugViewer->addPointCloud(gripCloud.makeShared(), gripColor, gripCloudName);
-        debugViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, boldPointSize, gripCloudName);
+        sceneViewer->addPointCloud(gripCloud.makeShared(), gripColor, gripCloudName);
+        sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, boldPointSize, gripCloudName);
     }
     else { }
 
-    if (scene)
-    {
-        sceneViewer = new pcl::visualization::PCLVisualizer ("Scene");
-        sceneViewer->initCameraParameters ();
-        sceneViewer->addCoordinateSystem (0.1);
-        sceneViewer->setBackgroundColor (0.0, 0.0, 0.0, 0);
-
-        // Add the matched template to the scene too
-        if (debug)
-        {
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> debugCloudColor
-                (debugCloud.makeShared(), 255, 255, 255);
-            sceneViewer->addPointCloud(debugCloud.makeShared(), debugCloudColor, debugCloudName);
-            sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, pointSize, debugCloudName);
-
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> gripColor
-                (gripCloud.makeShared(), 255, 0, 0);
-            sceneViewer->addPointCloud(gripCloud.makeShared(), gripColor, gripCloudName);
-            sceneViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, boldPointSize, gripCloudName);
-        }
-        else { }
-    }
-    else { }
+    if (view) viewer->addText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
+    if (scene) sceneViewer->addText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
+    if (links) linkViewer->addText(".", pauseX, pauseY, 0, 1.0, 1.0, 1.0, pauseText);
 
     printf("Starting service %s...\n", serviceName.c_str());
 
     // Set up the service to provide grip points
     ros::ServiceServer service;
     service = n.advertiseService(serviceName, gripPointsCallback);
+
+    // Now that the views are set up, we can properly pause if we need to
+    /*if (paused) // Broken
+    {
+        Pause(paused);
+    }
+    else { }*/
 
     printf("Running...\n");
 
@@ -903,17 +1071,15 @@ int main(int argc, char** argv)
         ros::spinOnce();
 
         if (view) viewer->spinOnce();
-        if (link) linkViewer->spinOnce();
+        if (links) linkViewer->spinOnce();
         if (scene) sceneViewer->spinOnce();
-        if (debug) debugViewer->spinOnce();
     }
     while (ros::ok() && !quit);
 
     // Begin shutdown
     if (view) delete viewer;
-    if (link) delete linkViewer;
+    if (links) delete linkViewer;
     if (scene) delete sceneViewer;
-    if (debug) delete debugViewer;
 
     delete listener;
 
@@ -921,3 +1087,7 @@ int main(int argc, char** argv)
 
     return 0;
 }
+
+//
+// </Main>
+//

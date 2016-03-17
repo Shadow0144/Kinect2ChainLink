@@ -19,8 +19,10 @@ pcl::visualization::CloudViewer viewer("Kinect2");
 
 const std::string imageWindowName = "Recording";
 
-const float SCALE = 0.5;
+const static float SCALE = 0.5f;
 const cv::Size size(1920 * SCALE, 1080 * SCALE);
+
+bool quit;
 
 void savePCD(bool ASCII)
 {
@@ -64,6 +66,37 @@ void imageCallback(const sensor_msgs::ImageConstPtr& image)
     }
 }
 
+void handleInput(char key)
+{
+    bool save = false;
+    bool saveASCII = false;
+    switch(key & 0xFF)
+    {
+      case 'x':
+        saveASCII = true;
+        // Fall through
+      case ' ':
+      case 's':
+        save = true;
+        break;
+      case 'q':
+        quit = true;
+        break;
+    }
+
+    if (save)
+    {
+        savePCD(saveASCII);
+    }
+    else { }
+}
+
+void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
+                        void* viewer_void)
+{
+    handleInput(event.getKeySym()[0]);
+}
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "pcd_write");
@@ -72,45 +105,38 @@ int main(int argc, char **argv)
 
     writer = pcl::PCDWriter();
 
+    printf("Press 's' or 'space' in one of the windows to save a binary pcd of the current point cloud\n");
+    printf("Press 'x' in one of the windows to save an ASCII pcd of the current point cloud\n");
+    printf("Press 's or space'q'' in one of the windows to quit\n\n");
+
+    std::string topic = "/kinect2/hd/points";
+    if (argc > 1)
+    {
+        topic = argv[1];
+    }
+    else { }
+
     // Try to view the cloud
-    ros::Subscriber sub = n.subscribe<sensor_msgs::PointCloud2>("/kinect2/hd/points", 1000, pointsCallback); // sd or hd
-    ros::Subscriber subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color_rect", 1000, imageCallback);
+    ros::Subscriber sub;
+    sub = n.subscribe<sensor_msgs::PointCloud2>(topic, 1000, pointsCallback);
+    ros::Subscriber subImg;
+    subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color_rect", 1000, imageCallback);
 
     cv::Mat empty = cv::Mat::zeros(500,500,CV_64F);
     cv::imshow(imageWindowName,empty);
 
-    bool quit = false;
+    viewer.registerKeyboardCallback (keyboardEventOccurred, (void*)&viewer);
+
+    quit = false;
     do
     {
         ros::spinOnce();
 
-        int key = cv::waitKey(10);
+        int key = cv::waitKey(1);
 
-        bool save = false;
-        bool saveASCII = false;
-        switch(key & 0xFF)
-        {
-          case ' ':
-          case 's':
-            save = true;
-            break;
-          case 'x':
-            saveASCII = true;
-            break;
-          case 'q':
-            quit = true;
-        }
+        handleInput(key);
 
-        if (save)
-        {
-            savePCD(false);
-        }
-        else { }
-        if (saveASCII)
-        {
-            savePCD(true);
-        }
-    } while (!quit && !viewer.wasStopped());
+    } while (!quit && !viewer.wasStopped() && ros::ok());
 
     return 0;
 }

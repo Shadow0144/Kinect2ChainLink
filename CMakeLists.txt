@@ -163,6 +163,7 @@ add_dependencies(chain_link_grip ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 ## Specify libraries to link a library or executable target against
 target_link_libraries(chain_link_grip ${catkin_LIBRARIES})
 target_link_libraries(chain_link_grip ${PCL_LIBRARIES})
+target_link_libraries(chain_link_grip ${OpenCV_LIBRARIES})
 
 target_link_libraries(pcd_write ${catkin_LIBRARIES})
 target_link_libraries(pcd_write ${PCL_LIBRARIES})

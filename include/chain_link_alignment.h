@@ -42,6 +42,8 @@ class FeatureCloud
     void RotateY(float theta);
     // Rotate the cloud around the z axis
     void RotateZ(float theta);
+    // Applies the transformation
+    void Transform(Eigen::Matrix4f transform);
 
     // Compute the surface normals and local features
     void processInput ();
@@ -94,6 +96,8 @@ class TemplateAlignment
     void alignAll (std::vector<TemplateAlignment::Result, Eigen::aligned_allocator<Result> > &results);
     // Align all of template clouds to the target cloud to find the one with best alignment score
     int findBestAlignment (TemplateAlignment::Result &result);
+    // Apply a series of transformations to each of the FeatureClouds
+    void ApplyTransformations(Eigen::Matrix4f transforms[]);
 
   private:
     // A list of template clouds and the target to which they will be aligned
@@ -127,12 +131,14 @@ public:
     PointCloud::Ptr GetTemplate(int n);
     std::vector<PointCloud::Ptr> GetAlignedTemplates();
     PointCloud::Ptr GetMostAlignedTemplate();
+    Eigen::Matrix4f GetBestTransform();
     int GetMostAlignedTemplateIndex();
     float GetTargetVoxelGridSize();
     void SetTargetVoxelGridSize(float size);
     float GetTemplateVoxelGridSize();
     void SetTemplateVoxelGridSize(float size);
     void SetTargetWindow(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
+    void ApplyTransformations(Eigen::Matrix4f transforms[]);
     // Adjust the number of max iterations
     void SetMaxIterations(int nr_iterations);
     // Get the number of max iterations
@@ -155,41 +161,75 @@ public:
     float GetzMaxTarget() { return zMaxTarget; }
 
 private:
+    void Construct(char* objectTemplatesFile, float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
+
     TemplateAlignment template_align;
     std::vector<FeatureCloud> object_templates; // Templates to search for
     FeatureCloud target_cloud; // Align templates to this (Redundant with template_align?)
     std::vector<PointCloud::Ptr> aligned_templates;
     int best_index; // Index of most aligned template
     PointCloud::Ptr best_cloud; // Most aligned template
+    Eigen::Matrix4f best_transform;
     void PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud);
-    //bool displayEnabled = false;
-    bool saveEnabled = false;
-    bool outputEnabled = true;
+    //bool displayEnabled;
+    bool saveEnabled;
+    bool outputEnabled;
     int numTemplates;
-    bool targetLoaded = false;
+    bool targetLoaded;
     pcl::PCDWriter writer;
     // Target
-    float voxel_grid_sizeTarget = 0.005f; // 0.005f
-    float xMinTarget = -10.5f;
-    float xMaxTarget = +10.5f;
-    float yMinTarget = -10.5f;
-    float yMaxTarget = +10.5f;
-    float zMinTarget = -10.0f;//+0.01f;
-    float zMaxTarget = 10.0f;
+    float voxel_grid_sizeTarget;
+    float xMinTarget;
+    float xMaxTarget;
+    float yMinTarget;
+    float yMaxTarget;
+    float zMinTarget;
+    float zMaxTarget;
     // Templates
-    float voxel_grid_sizeTemplate = 0.005f; // 0.005f
-    //static xMinTemplate = -0.25f;
-    //static xMaxTemplate = +0.25f;
-    //static yMinTemplate = -0.25f;
-    //static yMaxTemplate = +0.25f;
-    float zMinTemplate = -5.0f;
-    float zMaxTemplate = +0.0f;
-    float xOffset = -0.765f;
-    float yOffset = 0.0f;
-    float zOffset = 0.0f;
-    float xRot = 0.0f;
-    float yRot = -0.5f * M_PI;
-    float zRot = 0.0f;
+    float voxel_grid_sizeTemplate;
+    //float xMinTemplate;
+    //float xMaxTemplate;
+    //float yMinTemplate;
+    //float yMaxTemplate;
+    float zMinTemplate;
+    float zMaxTemplate;
+    float xOffset;
+    float yOffset;
+    float zOffset;
+    float xRot;
+    float yRot;
+    float zRot;
+
+    // Call first!
+    void SetParams()
+    {
+        //displayEnabled = false;
+        saveEnabled = false;
+        outputEnabled = true;
+        targetLoaded = false;
+        // Target
+        voxel_grid_sizeTarget = 0.005f; // 0.005f
+        xMinTarget = -10.5f;
+        xMaxTarget = +10.5f;
+        yMinTarget = -10.5f;
+        yMaxTarget = +10.5f;
+        zMinTarget = -10.0f;//+0.01f;
+        zMaxTarget = 10.0f;
+        // Templates
+        voxel_grid_sizeTemplate = 0.0075f; // 0.005f
+        //xMinTemplate = -0.25f;
+        //xMaxTemplate = +0.25f;
+        //yMinTemplate = -0.25f;
+        //yMaxTemplate = +0.25f;
+        zMinTemplate = -5.0f;
+        zMaxTemplate = +0.0f;
+        xOffset = -0.765f;
+        yOffset = 0.0f;
+        zOffset = 0.0f;
+        xRot = 0.0f;
+        yRot = -0.5f * M_PI;
+        zRot = 0.0f;
+    }
 };
 
 #endif /* CHAIN_LINK_ALIGNMENT_H_ */

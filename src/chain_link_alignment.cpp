@@ -154,6 +154,13 @@ FeatureCloud::RotateZ(float theta)
     pcl::transformPointCloud(*xyz_, *xyz_, transform);
 }
 
+// Applies the transform
+void
+FeatureCloud::Transform(Eigen::Matrix4f transform)
+{
+    pcl::transformPointCloud(*xyz_, *xyz_, transform);
+}
+
 // Get a pointer to the cloud 3D points
 PointCloud::Ptr
 FeatureCloud::getPointCloud () const
@@ -230,7 +237,7 @@ TemplateAlignment::TemplateAlignment () :
   sac_ia_.setMaximumIterations (nr_iterations_);
 }
 
-TemplateAlignment::~TemplateAlignment () {}
+TemplateAlignment::~TemplateAlignment () { }
 
 // Set the given cloud as the target to which the templates will be aligned
 void
@@ -321,6 +328,19 @@ TemplateAlignment::findBestAlignment (TemplateAlignment::Result &result)
   return (best_template);
 }
 
+// Apply a series of transformations to each of the FeatureClouds
+void
+TemplateAlignment::ApplyTransformations(Eigen::Matrix4f transforms[])
+{
+    int i = 0;
+    for (std::vector<FeatureCloud>::iterator it = templates_.begin();
+         it != templates_.end();
+         ++it)
+    {
+        ((FeatureCloud)*it).Transform(transforms[i++]);
+    }
+}
+
 //
 //
 // # TemplateAligner
@@ -331,6 +351,53 @@ TemplateAlignment::findBestAlignment (TemplateAlignment::Result &result)
 TemplateAligner::TemplateAligner(char* objectTemplatesFile,
                                  float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
 {
+    Construct(objectTemplatesFile, xMin, xMax, yMin, yMax, zMin, zMax);
+}
+
+TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile,
+                                 float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
+{
+    Construct(objectTemplatesFile, xMin, xMax, yMin, yMax, zMin, zMax);
+
+    // Load the target cloud PCD file
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
+    if (pcl::io::loadPCDFile (targetCloudFile, *cloud) == -1)
+    {
+        printf ("Error loading file %s\n", targetCloudFile);
+        return;
+    }
+    else { }
+
+    PreprocessTargetCloud(cloud);
+}
+
+TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile)
+{
+    Construct(objectTemplatesFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget);
+
+    // Load the target cloud PCD file
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
+    if (pcl::io::loadPCDFile (targetCloudFile, *cloud) == -1)
+    {
+        printf ("Error loading file %s\n", targetCloudFile);
+        return;
+    }
+    else { }
+
+    PreprocessTargetCloud(cloud);
+}
+
+TemplateAligner::TemplateAligner(char* objectTemplatesFile)
+{
+    Construct(objectTemplatesFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget);
+}
+
+TemplateAligner::TemplateAligner() { }
+
+void
+TemplateAligner::Construct(char* objectTemplatesFile, float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
+{
+    SetParams();
     setbuf(stdout, NULL);
 
     // Load the object templates specified in the object_templates.txt file
@@ -352,9 +419,9 @@ TemplateAligner::TemplateAligner(char* objectTemplatesFile,
       FeatureCloud template_cloud;
       template_cloud.loadInputCloud (pcd_filename);
       template_cloud.DownSample(voxel_grid_sizeTemplate);
-      template_cloud.Translate(xOffset, yOffset, zOffset); // Bring back to center
+      //template_cloud.Translate(xOffset, yOffset, zOffset); // Bring back to center
       //template_cloud.RotateX(xRot); // Rotate to correct angle
-      template_cloud.RotateY(yRot); // Rotate to correct angle
+      //template_cloud.RotateY(yRot); // Rotate to correct angle
       //template_cloud.RotateZ(zRot); // Rotate to correct angle
       //template_cloud.Clip(zMinTemplate, zMaxTemplate); // Clip templates along z!
       template_cloud.processInput();
@@ -382,30 +449,6 @@ TemplateAligner::TemplateAligner(char* objectTemplatesFile,
     zMinTarget = zMin; zMaxTarget = zMax;
 }
 
-TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile,
-                                 float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
-    : TemplateAligner(objectTemplatesFile, xMin, xMax, yMin, yMax, zMin, zMax)
-{
-    // Load the target cloud PCD file
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
-    if (pcl::io::loadPCDFile (targetCloudFile, *cloud) == -1)
-    {
-        printf ("Error loading file %s\n", targetCloudFile);
-        return;
-    }
-    else { }
-
-    PreprocessTargetCloud(cloud);
-}
-
-TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile)
-    : TemplateAligner(objectTemplatesFile, targetCloudFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget) { }
-
-TemplateAligner::TemplateAligner(char* objectTemplatesFile)
-    : TemplateAligner(objectTemplatesFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget) { }
-
-TemplateAligner::TemplateAligner() { }
-
 TemplateAligner::~TemplateAligner() { }
 
 void
@@ -414,7 +457,7 @@ TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cl
     // Assign to the target FeatureCloud
     if (outputEnabled)
     {
-        printf("Loading cloud of size %d points... ", cloud->size());
+        printf("Loading cloud of size %d points... ", ((int)cloud->size()));
     }
     else { }
     target_cloud.setInputCloud (cloud);
@@ -425,7 +468,7 @@ TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cl
     template_align.setTargetCloud (target_cloud);
     if (outputEnabled)
     {
-        printf("Loaded cloud of size %d points.\n", target_cloud.getPointCloud()->size());
+        printf("Loaded cloud of size %d points.\n", ((int)target_cloud.getPointCloud()->size()));
     }
     else { }
 
@@ -464,6 +507,13 @@ TemplateAligner::SetTargetWindow(float xMin, float xMax, float yMin, float yMax,
     xMinTarget = xMin; xMaxTarget = xMax;
     yMinTarget = yMin; yMaxTarget = yMax;
     zMinTarget = zMin; zMaxTarget = zMax;
+}
+
+// Apply a series of transformations to each of the FeatureClouds
+void
+TemplateAligner::ApplyTransformations(Eigen::Matrix4f transforms[])
+{
+    template_align.ApplyTransformations(transforms);
 }
 
 // Adjust the number of max iterations
@@ -520,6 +570,12 @@ PointCloud::Ptr
 TemplateAligner::GetMostAlignedTemplate()
 {
     return best_cloud;
+}
+
+Eigen::Matrix4f
+TemplateAligner::GetBestTransform()
+{
+    return best_transform;
 }
 
 int
@@ -589,6 +645,7 @@ TemplateAligner::Align()
     else { }
 
     // Print the rotation matrix and translation vector
+    best_transform = best_alignment.final_transformation;
     Eigen::Matrix3f rotation = best_alignment.final_transformation.block<3,3>(0, 0);
     Eigen::Vector3f translation = best_alignment.final_transformation.block<3,1>(0, 3);
 
