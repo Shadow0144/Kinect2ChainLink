@@ -40,6 +40,7 @@
 //#include <chain_link/gripResponse.h>
 #include "chain_link/grip.h"
 #include <chain_link_rotations.h>
+#include <tf/transform_broadcaster.h>
 
 //
 // </Includes>
@@ -48,6 +49,7 @@
 
 // Service and topic names
 const std::string topicName = "chain_link_grip/pose";
+const std::string chainLinkFrameId = "chain_link_grip_pose";
 const std::string defaultTopic = "/rectangle_detection_node/box_content";
 const std::string defaultDPI = "hd";
 
@@ -140,15 +142,13 @@ int q; // Counter of alignments
 const int pauseX = 5;
 const int pauseY = 500;
 const int pauseFont = 25;
+bool publishMessageOnce;
 
 // Set to true to exit
 bool quit;
 
 // Transform and index of best point to provide when the service is called and the time of the alignment
 tf::StampedTransform transform;
-ros::Time alignTime;
-bool responseReady;
-int gripNum;
 
 // Put this at the top for quick reference and changes
 // Call this first!
@@ -161,16 +161,16 @@ void SetUpParameters()
     x_range = 0.3f; // (Half the range)
     y_range = 0.3f; // (Half the range)
     z_range = 1.75f; // (Half the range)
-    rMax = 150;
-    gMax = 150;
-    bMax = 150;
+    rMax = 100;
+    gMax = 100;
+    bMax = 100;
     p = 1;
     q = 1;
     unpressedLeft = true;
     unpressedRight = true;
     addOnce = false;
     addSceneCloudOnce = false;
-    responseReady = true;
+    publishMessageOnce = false;
 }
 
 //
@@ -401,7 +401,11 @@ void linkKeyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
   //boost::shared_ptr<pcl::visualization::PCLVisualizer> eviewer = *static_cast<boost::shared_ptr<pcl::visualization::PCLVisualizer> *> (viewer_void);
   if (event.keyDown())
   {
-      if (unpressedLeft && (event.getKeyCode() == 60 || event.getKeyCode() == 44)) // "<" || ","
+      if (event.getKeySym () == "p")
+      {
+          Pause(!paused);
+      }
+      else if (unpressedLeft && (event.getKeyCode() == 60 || event.getKeyCode() == 44)) // "<" || ","
       {
           linkViewed = (--linkViewed+aligner.GetNumTemplates())%aligner.GetNumTemplates();
           linkViewer->updateText("Link #" + boost::lexical_cast<std::string>(linkViewed), linkX, linkY, linkFont, 1.0, 1.0, 1.0, linkText);
@@ -471,16 +475,17 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             tf::StampedTransform world;
 
             std::string frameId;
+            std::string parentId = "kinect2_rgb_optical_frame";
             if (!kinect)
             {
-                frameId = "/container";
+                frameId = "container";
             }
             else
             {
-                frameId = "/kinect2_link";
+                frameId = parentId;
             }
 
-            listener->lookupTransform("/container", frameId,
+            listener->lookupTransform(parentId, frameId,
                                    ros::Time(0), world);
 
             // Apply the inverse rotation from the header
@@ -508,20 +513,33 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             // Select one grip point (the one with the lowest z should always be the best)
             int index = 0;
             int minZ = transformedGripCloud.points[index].z;
+            // Horribly ineffient way to check for valid rotations
+            pcl::PointCloud<pcl::PointXYZ> zPoint;
+            zPoint.width    = 1;
+            zPoint.height   = 1;
+            zPoint.is_dense = false;
+            zPoint.points.resize (zPoint.width * zPoint.height);
+            zPoint.points[0].x = 0.0f;
+            zPoint.points[0].y = 0.0f;
+            zPoint.points[0].z = 0.0f;
+            // Best the best grasp point and rotation
             for (int i = 1; i < transformedGripCloud.points.size(); i++)
             {
-                if (transformedGripCloud.points[i].z < minZ) // Add check that rotation is valid! // TODO
+                if (transformedGripCloud.points[i].z < minZ) // Check for the best position
                 {
-                    minZ = transformedGripCloud.points[i].z;
-                    index = i;
+                    pcl::transformPointCloud(zPoint, zPoint, t, r);
+                    if (zPoint[0].z > 0) // The grabber should point down
+                    {
+                        minZ = transformedGripCloud.points[i].z;
+                        index = i;
+                    }
+                    else { }
                 }
                 else { }
             }
 
-            gripNum = index;
-
             // Link -> Container -> World
-            Eigen::Matrix3f linkMat = GripRots[gripNum];
+            Eigen::Matrix3f linkMat = GripRots[index];
             tf::StampedTransform link;
 
             float w = sqrt(1.0f + linkMat(0,0) + linkMat(1,1) + linkMat(2,2)) / 2.0f;
@@ -530,15 +548,8 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             float y = (linkMat(0,2) - linkMat(2,0)) / w4;
             float z = (linkMat(1,0) - linkMat(0,1)) / w4;
 
-            link.getRotation().setX(x);
-            link.getRotation().setY(y);
-            link.getRotation().setZ(z);
-            link.getRotation().setW(w);
-
-            link.getOrigin().setX(GripPoints[gripNum][0]);
-            link.getOrigin().setY(GripPoints[gripNum][1]);
-            link.getOrigin().setZ(GripPoints[gripNum][2]);
-            link.getOrigin().setW(1.0f);
+            link.setOrigin(tf::Vector3(GripPoints[index][0], GripPoints[index][1], GripPoints[index][2]));
+            link.setRotation(tf::Quaternion(x, y, z, w));
 
             ROS_INFO("Link:");
             ROS_INFO("Position x: %f, y: %f, z: %f",
@@ -561,15 +572,8 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             y = (containerMat(0,2) - containerMat(2,0)) / w4;
             z = (containerMat(1,0) - containerMat(0,1)) / w4;
 
-            container.getRotation().setX(x);
-            container.getRotation().setY(y);
-            container.getRotation().setZ(z);
-            container.getRotation().setW(w);
-
-            container.getOrigin().setX(containerMat(3,0));
-            container.getOrigin().setY(containerMat(3,1));
-            container.getOrigin().setZ(containerMat(3,2));
-            container.getOrigin().setW(containerMat(3,3));
+            container.setOrigin(tf::Vector3(containerMat(0,3), containerMat(1,3), containerMat(2,3)));
+            container.setRotation(tf::Quaternion(x, y, z, w));
 
             ROS_INFO("Container:");
             ROS_INFO("Position x: %f, y: %f, z: %f",
@@ -584,46 +588,46 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 
             // -> World
             tf::Transform trans = container * link;
+            //tf::Transform trans = link * container;
             transform.frame_id_ = frameId;
+            transform.child_frame_id_ = chainLinkFrameId;
             transform.setOrigin(trans.getOrigin());
             transform.setRotation(trans.getRotation());
 
-            responseReady = true;
-
-            alignTime = ros::Time::now();
-
             cloudAvailable = true;
+            publishMessageOnce = false;
+
+            // Draw the grip axes in the picture
+            pcl::PointCloud<pcl::PointXYZRGB> axes;
+            axes.width    = 4;
+            axes.height   = 1;
+            axes.is_dense = false;
+            axes.points.resize (axes.width * axes.height);
+
+            axes.points[0].x = 0.0f;
+            axes.points[0].y = 0.0f;
+            axes.points[0].z = 0.0f;
+
+            axes.points[1].x = 0.05f;
+            axes.points[1].y = 0.0f;
+            axes.points[1].z = 0.0f;
+
+            axes.points[2].x = 0.0f;
+            axes.points[2].y = 0.05f;
+            axes.points[2].z = 0.0f;
+
+            axes.points[3].x = 0.0f;
+            axes.points[3].y = 0.0f;
+            axes.points[3].z = 0.05f;
+
+            pcl::transformPointCloud(axes, axes, t, r);
+
+            pcl::PointCloud<pcl::PointXYZRGB> rotationCloud;
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr rotationCloudShared = rotationCloud.makeShared();
+            pcl::transformPointCloud(fullLinkCloud, rotationCloud, t, r);
 
             if (scene) // If the scene viewer is available
             {
-                pcl::PointCloud<pcl::PointXYZRGB> axes;
-                axes.width    = 4;
-                axes.height   = 1;
-                axes.is_dense = false;
-                axes.points.resize (axes.width * axes.height);
-
-                axes.points[0].x = 0.0f;
-                axes.points[0].y = 0.0f;
-                axes.points[0].z = 0.0f;
-
-                axes.points[1].x = 0.05f;
-                axes.points[1].y = 0.0f;
-                axes.points[1].z = 0.0f;
-
-                axes.points[2].x = 0.0f;
-                axes.points[2].y = 0.05f;
-                axes.points[2].z = 0.0f;
-
-                axes.points[3].x = 0.0f;
-                axes.points[3].y = 0.0f;
-                axes.points[3].z = 0.05f;
-
-                pcl::transformPointCloud(axes, axes, t, r);
-
-                pcl::PointCloud<pcl::PointXYZRGB> rotationCloud;
-                pcl::PointCloud<pcl::PointXYZRGB>::Ptr rotationCloudShared = rotationCloud.makeShared();
-                pcl::transformPointCloud(fullLinkCloud, rotationCloud, t, r);
-
                 pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> fullLinkColor
                     (rotationCloudShared, 255, 255, 255);
                 sceneViewer->updatePointCloud(rotationCloudShared, fullLinkColor, fullLinkCloudName);
@@ -661,6 +665,20 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
                     viewer->updatePointCloud(aligner.GetTargetCloud(), targetCloudName);
                     viewer->updatePointCloud(aligner.GetMostAlignedTemplate(), templateColor, templateCloudName);
                 }
+
+                viewer->removeShape("x");
+                viewer->removeShape("y");
+                viewer->removeShape("z");
+                viewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[1], 255, 255, 0, "x");
+                viewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[2], 0, 255, 255, "y");
+                viewer->addLine<pcl::PointXYZRGB> (axes.points[0], axes.points[3], 255, 0, 255, "z");
+            }
+            else { }
+
+            q++;
+            if (pauseOption && q%p == 0)
+            {
+                Pause(!paused);
             }
             else { }
         }
@@ -669,13 +687,6 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             ROS_ERROR("%s", ex.what());
             return;
         }
-
-        q++;
-        if (pauseOption && q%p == 0)
-        {
-            Pause(!paused);
-        }
-        else { }
     }
     else { }
 }
@@ -732,55 +743,6 @@ void sceneCallback(const sensor_msgs::PointCloud2ConstPtr& points)
     else { }
 }
 
-// geometry_msgs/PoseStamped
-bool Publish(ros::Publisher publisher)
-{
-    printf("\n");
-    ROS_INFO("Publishing grip pose");
-
-    if (!cloudAvailable || !responseReady)
-    {
-        ROS_INFO("No grip ready yet");
-        return -1;
-    }
-    else { }
-
-    geometry_msgs::PoseStamped pose;
-    pose.header = std_msgs::Header();
-
-    // Stamp with when we aligned
-    pose.header.stamp = alignTime;
-
-    // Setup the tf
-    pose.header.frame_id = transform.frame_id_;
-
-    // Put the data into the response
-    pose.pose.position.x = 1; // transform.getOrigin().getX();
-    pose.pose.position.y = 1; // transform.getOrigin().getY();
-    pose.pose.position.z = 1; //transform.getOrigin().getZ();
-
-    pose.pose.orientation.x = 0; //transform.getRotation().x();
-    pose.pose.orientation.y = 0; //transform.getRotation().y();
-    pose.pose.orientation.z = 0; //transform.getRotation().z();
-    pose.pose.orientation.w = 1; //transform.getRotation().w();
-
-    publisher.publish(pose);
-
-    ROS_INFO("Grip published:");
-    ROS_INFO("Position x: %f, y: %f, z: %f",
-             pose.pose.position.x,
-             pose.pose.position.y,
-             pose.pose.position.z);
-    ROS_INFO("Rotation x: %f, y: %f, z: %f, w: %f",
-             pose.pose.orientation.x,
-             pose.pose.orientation.y,
-             pose.pose.orientation.z,
-             pose.pose.orientation.w);
-
-    printf("\n");
-    return true;
-}
-
 // sensor_msgs/ImageConstPtr
 void imageCallback(const sensor_msgs::ImageConstPtr& image)
 {
@@ -798,6 +760,45 @@ void imageCallback(const sensor_msgs::ImageConstPtr& image)
       ROS_ERROR("cv_bridge exception: %s", e.what());
       return;
     }
+}
+
+// Publish the transform of the grip point
+// geometry_msgs/PoseStamped
+bool Publish(tf::TransformBroadcaster broadcaster)
+{
+    //printf("\n");
+    //ROS_INFO("Publishing grip pose");
+
+    if (!cloudAvailable)
+    {
+        //ROS_INFO("No grip ready yet");
+        return -1;
+    }
+    else { }
+
+    transform.stamp_ = ros::Time::now();
+
+    broadcaster.sendTransform(transform);
+
+    if (!publishMessageOnce)
+    {
+        printf("\n");
+        ROS_INFO("Grip published:");
+        ROS_INFO("Position x: %f, y: %f, z: %f",
+                     transform.getOrigin().getX(),
+                     transform.getOrigin().getY(),
+                     transform.getOrigin().getZ());
+            ROS_INFO("Rotation x: %f, y: %f, z: %f, w: %f",
+                     transform.getRotation().x(),
+                     transform.getRotation().y(),
+                     transform.getRotation().z(),
+                     transform.getRotation().w());
+        printf("\n");
+        publishMessageOnce = true;
+    }
+    else { }
+
+    return true;
 }
 
 //
@@ -1123,14 +1124,16 @@ int main(int argc, char** argv)
     printf("Starting topic %s...\n", topicName.c_str());
 
     // Set up the service to provide grip points
-    ros::Publisher publisher;
+    /*ros::Publisher publisher;
     publisher = n.advertise<geometry_msgs::PoseStamped>(topicName, 10);
     if (!publisher)
     {
         ROS_ERROR("Unable to start publisher");
         return -1;
     }
-    else { }
+    else { }*/
+    // Pose publisher
+    tf::TransformBroadcaster broadcaster;
 
     // Now that the views are set up, we can properly pause if we need to
     /*if (paused) // Broken
@@ -1151,7 +1154,8 @@ int main(int argc, char** argv)
         ros::spinOnce();
 
         // Publish the grip pose
-        Publish(publisher);
+        //Publish(publisher);
+        Publish(broadcaster);
 
         // Update the views
         if (view) viewer->spinOnce();

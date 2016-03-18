@@ -113,7 +113,7 @@ class TemplateAlignment
     // Constants for the sac_ia
     const static float minSampleDistance = 0.05f;
     const static float maxCorrespondenceDistance = 0.01f*0.01f;
-    const static int numIterations = 5; // 500
+    const static int numIterations = 500; // 500;
 };
 
 class TemplateAligner

@@ -3,7 +3,8 @@
 
 #include <Eigen/Geometry>
 
-const static int view_num = 42;
+//const static int view_num = 42;
+const static int view_num = 1;
 Eigen::Matrix4f Views[view_num];
 
 const static int grip_num = 36;
@@ -244,7 +245,7 @@ void InitPointsAndRotatations()
 //
 //
 //
-    Views[0] <<
+    /*Views[0] <<
      0.0, 0.0, 1.0, 0.000636778,
      -0.525731, -0.850651, 0.0, 0.403536472197,
      0.850651, -0.525731, 0.0, -0.650167373253,
@@ -453,10 +454,18 @@ void InitPointsAndRotatations()
      -0.809017, -0.467086, -0.356822, 0.623111670393,
      0.5, -0.866025, 0.0, -0.384710638207,
      -0.309017, -0.178411, 0.934172, 0.240532903687,
+     0.0, 0.0, 0.0, 1.0;*/
+//
+//
+//
+    //
+    // For one view
+    Views[0] <<
+     1.0, 0.0, 0.0, 0.0,
+     0.0, 1.0, 0.0, 0.0,
+     0.0, 0.1, 1.0, 0.0,
      0.0, 0.0, 0.0, 1.0;
-//
-//
-//
+    //
 
     // Set up grip points
     Eigen::Matrix3f id, x90, y90, z90, nx90, ny90, nz90, x180, y180, z180;
