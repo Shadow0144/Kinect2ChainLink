@@ -163,7 +163,7 @@ void SetUpParameters()
     z_range = 1.75f; // (Half the range)
     rMax = 100;
     gMax = 100;
-    bMax = 100;
+    bMax = 255;
     p = 1;
     q = 1;
     unpressedLeft = true;
@@ -967,7 +967,7 @@ int main(int argc, char** argv)
 
     listener = new tf::TransformListener();
 
-    //Create filtering codition. Points less than the limits will remain.
+    // Create filtering codition. Points less than the limits will remain.
     pcl::ConditionAnd<pcl::PointXYZRGB>::Ptr condition
             (new pcl::ConditionAnd<pcl::PointXYZRGB>);
     condition->addComparison(pcl::PackedRGBComparison<pcl::PointXYZRGB>::ConstPtr
