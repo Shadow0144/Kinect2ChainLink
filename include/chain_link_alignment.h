@@ -28,7 +28,7 @@ class FeatureCloud
     SurfaceNormals::Ptr getSurfaceNormals () const;
     // Get a pointer to the cloud of feature descriptors
     LocalFeatures::Ptr getLocalFeatures () const;
-    // Downsamples the point cloud
+    // Downsample the point cloud
     void DownSample(float voxel_grid_size);
     // Clip the point cloud in x, y, and z
     void Clip(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
@@ -42,7 +42,7 @@ class FeatureCloud
     void RotateY(float theta);
     // Rotate the cloud around the z axis
     void RotateZ(float theta);
-    // Applies the transformation
+    // Apply a  transformation
     void Transform(Eigen::Matrix4f transform);
 
     // Compute the surface normals and local features
@@ -113,7 +113,7 @@ class TemplateAlignment
     // Constants for the sac_ia
     const static float minSampleDistance = 0.05f;
     const static float maxCorrespondenceDistance = 0.01f*0.01f;
-    const static int numIterations = 50; // 500
+    const static int numIterations = 5; // 500
 };
 
 class TemplateAligner
@@ -125,34 +125,54 @@ public:
     TemplateAligner(char* objectTemplatesFile);
     TemplateAligner(char* objectTemplatesFile, char* targetCloudFile);
     ~TemplateAligner();
-    void SetTargetCloud(PointCloud::Ptr xyz);
-    PointCloud::Ptr GetTargetCloud();
-    int GetNumTemplates();
-    PointCloud::Ptr GetTemplate(int n);
-    std::vector<PointCloud::Ptr> GetAlignedTemplates();
-    PointCloud::Ptr GetMostAlignedTemplate();
-    Eigen::Matrix4f GetBestTransform();
-    int GetMostAlignedTemplateIndex();
-    float GetTargetVoxelGridSize();
-    void SetTargetVoxelGridSize(float size);
-    float GetTemplateVoxelGridSize();
-    void SetTemplateVoxelGridSize(float size);
-    void SetTargetWindow(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
+    // Apply a series of transformations to each of the FeatureClouds
     void ApplyTransformations(Eigen::Matrix4f transforms[]);
-    // Adjust the number of max iterations
-    void SetMaxIterations(int nr_iterations);
-    // Get the number of max iterations
-    int GetMaxIterations();
-    //void SetDisplayEnabled(bool enabled);
-    //bool GetDisplayEnabled();
-    void SetSaveEnabled(bool enabled);
-    bool GetSaveEnabled();
-    void SetOutputEnabled(bool enabled);
-    bool GetOutputEnabled();
-    void Align(); // Find best object template aligned to the target scene
-    void AlignAll(); // Make all object templates aligned to the target scene
+     // Find the best object template aligned to the target scene
+    void Align();
+    // Make all the object templates aligned to the target scene
+    void AlignAll();
 
-    // Getters for the window
+    // Assign and preprocess a target cloud; also write the filtered cloud to file if saving is enabled
+    void SetTargetCloud(PointCloud::Ptr xyz);
+    // Get a pointer to the current target cloud
+    PointCloud::Ptr GetTargetCloud();
+    // Get the number of templates
+    int GetNumTemplates();
+    // Get the nth template as a pointer to a point cloud
+    PointCloud::Ptr GetTemplate(int n);
+    // Get a vector of the template point clouds aligned to their matches
+    std::vector<PointCloud::Ptr> GetAlignedTemplates();
+    // Get the most aligned template in aligned space
+    PointCloud::Ptr GetMostAlignedTemplate();
+    // Get the transform used to map the template to the match in the target
+    Eigen::Matrix4f GetBestTransform();
+    // Get the index of the most aligned template in the vector
+    int GetMostAlignedTemplateIndex();
+    // Adjust the number of max iterations for alignment attempts
+    void SetMaxIterations(int nr_iterations);
+    // Get the number of max iterations for alignment attempts
+    int GetMaxIterations();
+    // Set the size of the target's voxel grid used for downsampling and downsample
+    void SetTargetVoxelGridSize(float size);
+    // Get the size of the target's voxel grid used for downsampling
+    float GetTargetVoxelGridSize();
+    // Set the size of the templates' voxel grid used for downsampling and downsamples
+    void SetTemplateVoxelGridSize(float size);
+    // Get the size of the templates' voxel grid used for downsampling
+    float GetTemplateVoxelGridSize();
+    // Set the window for culling the target
+    void SetTargetWindow(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
+
+    // Get if saving of the filtered target cloud is enabled
+    bool GetSaveEnabled();
+    // Set if saving of the filtered target cloud is enabled
+    void SetSaveEnabled(bool enabled);
+    // Get if printing output to the console is enabled
+    bool GetOutputEnabled();
+    // Set if printing output to the console is enabled
+    void SetOutputEnabled(bool enabled);
+
+    // Getters for the culling window dimensions
     float GetxMinTarget() { return xMinTarget; }
     float GetxMaxTarget() { return xMaxTarget; }
     float GetyMinTarget() { return yMinTarget; }
@@ -161,23 +181,25 @@ public:
     float GetzMaxTarget() { return zMaxTarget; }
 
 private:
-    void Construct(char* objectTemplatesFile, float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
-
-    TemplateAlignment template_align;
-    std::vector<FeatureCloud> object_templates; // Templates to search for
-    FeatureCloud target_cloud; // Align templates to this (Redundant with template_align?)
-    std::vector<PointCloud::Ptr> aligned_templates;
-    int best_index; // Index of most aligned template
-    PointCloud::Ptr best_cloud; // Most aligned template
-    Eigen::Matrix4f best_transform;
+    // Contructor so the compiler stops giving warnings for base constructors
+    void Construct(char* objectTemplatesFile);
+    // Downsample and clip the target cloud
     void PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud);
-    //bool displayEnabled;
+
+    TemplateAlignment template_align; // Aligner which matches templates to the target
+    std::vector<FeatureCloud> object_templates; // Templates to search for in the target
+    FeatureCloud target_cloud; // Align templates to this (Redundant with template_align?)
+    std::vector<PointCloud::Ptr> aligned_templates; // Vector of the templates in aligned form
+    int best_index; // Index of most aligned template
+    PointCloud::Ptr best_cloud; // Most aligned template in its aligned form
+    Eigen::Matrix4f best_transform; // The transform mapping the template to the target of the best match
+    int numTemplates; // Number of templates used
+    bool targetLoaded; // True if a target has been loaded since construction
+    // Extra options for saving or displaying output
     bool saveEnabled;
     bool outputEnabled;
-    int numTemplates;
-    bool targetLoaded;
     pcl::PCDWriter writer;
-    // Target
+    // Target parameters (some are disabled)
     float voxel_grid_sizeTarget;
     float xMinTarget;
     float xMaxTarget;
@@ -185,7 +207,7 @@ private:
     float yMaxTarget;
     float zMinTarget;
     float zMaxTarget;
-    // Templates
+    // Templates parameters (some are disabled)
     float voxel_grid_sizeTemplate;
     //float xMinTemplate;
     //float xMaxTemplate;
@@ -193,14 +215,8 @@ private:
     //float yMaxTemplate;
     float zMinTemplate;
     float zMaxTemplate;
-    float xOffset;
-    float yOffset;
-    float zOffset;
-    float xRot;
-    float yRot;
-    float zRot;
 
-    // Call first!
+    // Call first! Assigns the parameters all default values without the compiler giving warnings
     void SetParams()
     {
         //displayEnabled = false;
@@ -216,19 +232,13 @@ private:
         zMinTarget = -10.0f;//+0.01f;
         zMaxTarget = 10.0f;
         // Templates
-        voxel_grid_sizeTemplate = 0.0075f; // 0.005f
+        voxel_grid_sizeTemplate = 0.005f; // 0.005f
         //xMinTemplate = -0.25f;
         //xMaxTemplate = +0.25f;
         //yMinTemplate = -0.25f;
         //yMaxTemplate = +0.25f;
         zMinTemplate = -5.0f;
         zMaxTemplate = +0.0f;
-        xOffset = -0.765f;
-        yOffset = 0.0f;
-        zOffset = 0.0f;
-        xRot = 0.0f;
-        yRot = -0.5f * M_PI;
-        zRot = 0.0f;
     }
 };
 

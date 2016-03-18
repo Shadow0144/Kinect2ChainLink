@@ -481,7 +481,7 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
             }
 
             listener->lookupTransform("/container", frameId,
-                                   ros::Time(0), world);
+                                   ros::Time(0), world); // FIX!
 
             // Apply the inverse rotation from the header
             Eigen::Vector3f t;

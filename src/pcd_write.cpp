@@ -13,17 +13,19 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 
-pcl::PointCloud<pcl::PointXYZRGB> cloud;
 pcl::PCDWriter writer;
+pcl::PointCloud<pcl::PointXYZRGB> cloud;
 pcl::visualization::CloudViewer viewer("Kinect2");
 
 const std::string imageWindowName = "Recording";
 
+// Image window resizing parameters
 const static float SCALE = 0.5f;
 const cv::Size size(1920 * SCALE, 1080 * SCALE);
 
 bool quit;
 
+// Save the point cloud data as an ASCII or binary file
 void savePCD(bool ASCII)
 {
     std::string file;
@@ -40,6 +42,7 @@ void savePCD(bool ASCII)
     std::cout << "Saved " << cloud.size() << " data points to " << file << "." << std::endl;
 }
 
+// Update the cloud with the latest data from the kinect
 // sensor_msgs/PointCloud2
 void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
 {
@@ -50,6 +53,8 @@ void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& points)
     viewer.showCloud(cloud.makeShared());
 }
 
+// Update the image with with the latest image from the kinect
+// sensor_msgs/ImageConstPtr
 void imageCallback(const sensor_msgs::ImageConstPtr& image)
 {
     cv_bridge::CvImagePtr cv_ptr;
@@ -66,6 +71,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& image)
     }
 }
 
+// Handle input from the cloud window or the image window
 void handleInput(char key)
 {
     bool save = false;
@@ -91,6 +97,7 @@ void handleInput(char key)
     else { }
 }
 
+// Handle keyboard events occuring in the cloud viewing window
 void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
                         void* viewer_void)
 {
@@ -99,6 +106,21 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
 
 int main(int argc, char **argv)
 {
+    std::string topic = "/kinect2/hd/points";
+    if (argc > 1) // Parse input data if any
+    {
+        if (strcmp(argv[1], "-h") == 0) // Display help if asked for it, then exit
+        {
+            printf("pcd_writer allows you to save point cloud data to a file from a topic\n");
+            printf("Useage: pcd_writer [topic]\n");
+            printf("Default topic is /kinect2/hd/points\n");
+            return 0; // Exit early
+        }
+        else { }
+        topic = argv[1]; // Use the different topic instead if specified
+    }
+    else { }
+
     ros::init(argc, argv, "pcd_write");
 
     ros::NodeHandle n;
@@ -109,34 +131,28 @@ int main(int argc, char **argv)
     printf("Press 'x' in one of the windows to save an ASCII pcd of the current point cloud\n");
     printf("Press 's or space'q'' in one of the windows to quit\n\n");
 
-    std::string topic = "/kinect2/hd/points";
-    if (argc > 1)
-    {
-        topic = argv[1];
-    }
-    else { }
-
-    // Try to view the cloud
+    // Try to view the cloud and the image
     ros::Subscriber sub;
     sub = n.subscribe<sensor_msgs::PointCloud2>(topic, 1000, pointsCallback);
     ros::Subscriber subImg;
     subImg = n.subscribe<sensor_msgs::Image>("/kinect2/hd/image_color_rect", 1000, imageCallback);
 
-    cv::Mat empty = cv::Mat::zeros(500,500,CV_64F);
-    cv::imshow(imageWindowName,empty);
-
     viewer.registerKeyboardCallback (keyboardEventOccurred, (void*)&viewer);
 
     quit = false;
-    do
+    do // Main loop
     {
+        // Update messages
         ros::spinOnce();
 
+        // Check for keyboard input and update window
         int key = cv::waitKey(1);
 
+        // Handle any input we received
         handleInput(key);
 
     } while (!quit && !viewer.wasStopped() && ros::ok());
+    // Quit if the user pressed 'q', the window was closed, or ROS was interrupted
 
     return 0;
 }

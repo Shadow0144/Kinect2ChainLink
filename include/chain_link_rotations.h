@@ -459,94 +459,160 @@ void InitPointsAndRotatations()
 //
 
     // Set up grip points
-    Eigen::Matrix3f x90, y90, z90;
-    float cosT = cosf(M_PI);
-    float sinT = sinf(M_PI);
+    Eigen::Matrix3f id, x90, y90, z90, nx90, ny90, nz90, x180, y180, z180;
+    float cosT = cosf(M_PI/2);
+    float sinT = sinf(M_PI/2);
+    float ncosT = cosf(-M_PI/2);
+    float nsinT = sinf(-M_PI/2);
+    float cosTT = cosf(M_PI);
+    float sinTT = sinf(M_PI);
+
+    id <<    1.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 1.0f;
 
     x90 <<
-            1.0f,   0.0f,   0.0f,
-            0.0f,   cosT,   -sinT,
-            0.0f,   sinT,   cosT;
+             1.0f,   0.0f,   0.0f,
+             0.0f,   cosT,  -sinT,
+             0.0f,   sinT,   cosT;
     y90 <<
-            cosT,   0.0f,   sinT,
-            0.0f,   1.0f,   0.0f,
-            -sinT,  0.0f,   cosT;
+             cosT,   0.0f,   sinT,
+             0.0f,   1.0f,   0.0f,
+            -sinT,   0.0f,   cosT;
     z90 <<
-            cosT,   sinT,   0.0f,
-            -sinT,  cosT,   0.0f,
-            0.0f,   0.0f,   1.0f;
+             cosT,   sinT,   0.0f,
+            -sinT,   cosT,   0.0f,
+             0.0f,   0.0f,   1.0f;
 
-    GripRots[0] = y90;
-    GripRots[1] = -y90;
+    nx90 <<
+              1.0f,   0.0f,    0.0f,
+              0.0f,  ncosT,  -nsinT,
+              0.0f,  nsinT,   ncosT;
+    ny90 <<
+             ncosT,   0.0f,   nsinT,
+              0.0f,   1.0f,    0.0f,
+            -nsinT,   0.0f,   ncosT;
+    nz90 <<
+             ncosT,  nsinT,    0.0f,
+            -nsinT,  ncosT,    0.0f,
+              0.0f,   0.0f,    1.0f;
+    x180 <<
+              1.0f,   0.0f,    0.0f,
+              0.0f,  cosTT,  -sinTT,
+              0.0f,  sinTT,   cosTT;
+    y180 <<
+             cosTT,   0.0f,   sinTT,
+              0.0f,   1.0f,    0.0f,
+            -sinTT,   0.0f,   cosTT;
+    z180 <<
+             cosTT,  sinTT,    0.0f,
+            -sinTT,  cosTT,    0.0f,
+              0.0f,   0.0f,    1.0f;
 
     // 8 x ~9 x 3.5
     int i = 0;
     // In meters
     // Middle bar
         // Middle
+        GripRots[i] = ny90 * z90;
         GripPoints[i++] << 0.01f, 0.0f, 0.0165f;
+        GripRots[i] = ny90 * nz90;
         GripPoints[i++] << 0.01f, 0.0f, 0.0165f;
         //
+        GripRots[i] = y90 * z90;
         GripPoints[i++] << -0.01f, 0.0f, 0.0165f;
+        GripRots[i] = y90 * nz90;
         GripPoints[i++] << -0.01f, 0.0f, 0.0165f;
 
         // Top
-        GripPoints[i++] << 0.01f, -0.025f, 0.0165f;
-        GripPoints[i++] << 0.01f, -0.025f, 0.0165f;
+        GripRots[i] = ny90 * z90;
+        GripPoints[i++] << 0.01f, 0.025f, 0.0165f;
+        GripRots[i] = ny90 * nz90;
+        GripPoints[i++] << 0.01f, 0.025f, 0.0165f;
         //
-        GripPoints[i++] << -0.01f, -0.025f, 0.0165f;
-        GripPoints[i++] << -0.01f, -0.025f, 0.0165f;
+        GripRots[i] = y90 * z90;
+        GripPoints[i++] << -0.01f, 0.025f, 0.0165f;
+        GripRots[i] = y90 * nz90;
+        GripPoints[i++] << -0.01f, 0.025f, 0.0165f;
 
         // Bottom
-        GripPoints[i++] << 0.01f, 0.025f, 0.0165f;
-        GripPoints[i++] << 0.01f, 0.025f, 0.0165f;
+        GripRots[i] = ny90 * z90;
+        GripPoints[i++] << 0.01f, -0.025f, 0.0165f;
+        GripRots[i] = ny90 * nz90;
+        GripPoints[i++] << 0.01f, -0.025f, 0.0165f;
         //
-        GripPoints[i++] << -0.01f, 0.025f, 0.0165f;
-        GripPoints[i++] << -0.01f, 0.025f, 0.0165f;
+        GripRots[i] = y90 * z90;
+        GripPoints[i++] << -0.01f, -0.025f, 0.0165f;
+        GripRots[i] = y90 * nz90;
+        GripPoints[i++] << -0.01f, -0.025f, 0.0165f;
 
     // Top Plate Notch Side
         // Middle
+        GripRots[i] = ny90;
         GripPoints[i++] << 0.04f, 0.0415f, 0.0f;
+        GripRots[i] = ny90 * z180;
         GripPoints[i++] << 0.04f, 0.0415f, 0.0f;
-        // Left
+        // Front
+        GripRots[i] = y180;
         GripPoints[i++] << 0.0325f, 0.0415f, 0.015f;
+        GripRots[i] = y180 * z180;
         GripPoints[i++] << 0.0325f, 0.0415f, 0.015f;
-        // Right
+        // Back
+        GripRots[i] = id;
         GripPoints[i++] << 0.0325f, 0.0415f, -0.015f;
+        GripRots[i] = z180;
         GripPoints[i++] << 0.0325f, 0.0415f, -0.015f;
 
     // Top Plate Hole Side
         // Middle
+        GripRots[i] = y90;
         GripPoints[i++] << -0.04f, 0.0435f, 0.0f;
+        GripRots[i] = y90 * z180;
         GripPoints[i++] << -0.04f, 0.0435f, 0.0f;
-        // Left
+        // Front
+        GripRots[i] = y180;
         GripPoints[i++] << -0.0325f, 0.0435f, 0.015f;
+        GripRots[i] = y180 * z180;
         GripPoints[i++] << -0.0325f, 0.0435f, 0.015f;
-        // Right
+        // Back
+        GripRots[i] = id;
         GripPoints[i++] << -0.0325f, 0.0435f, -0.015f;
+        GripRots[i] = z180;
         GripPoints[i++] << -0.0325f, 0.0435f, -0.015f;
 
     // Bottom Plate Notch Side
         // Middle
+        GripRots[i] = ny90;
         GripPoints[i++] << 0.04f, -0.0415f, 0.0f;
+        GripRots[i] = ny90 * z180;
         GripPoints[i++] << 0.04f, -0.0415f, 0.0f;
-        // Left
+        // Front
+        GripRots[i] = id;
+        GripPoints[i++] << 0.0325f, -0.0415f, -0.015f;
+        GripRots[i] = z180;
+        GripPoints[i++] << 0.0325f, -0.0415f, -0.015f;
+        // Back
+        GripRots[i] = y180;
         GripPoints[i++] << 0.0325f, -0.0415f, 0.015f;
+        GripRots[i] = y180 * z180;
         GripPoints[i++] << 0.035f, -0.0415f, 0.015f;
-        // Right
-        GripPoints[i++] << 0.0325f, -0.0415f, -0.015f;
-        GripPoints[i++] << 0.0325f, -0.0415f, -0.015f;
 
     // Bottom Plate Hole Side
         // Middle
+        GripRots[i] = y90;
         GripPoints[i++] << -0.04f, -0.0435f, 0.0f;
+        GripRots[i] = y90 * z180;
         GripPoints[i++] << -0.04f, -0.0435f, 0.0f;
-        // Left
-        GripPoints[i++] << -0.0325f, -0.0435f, 0.015f;
-        GripPoints[i++] << -0.0325f, -0.0435f, 0.015f;
-        // Right
+        // Front
+        GripRots[i] = id;
         GripPoints[i++] << -0.0325f, -0.0435f, -0.015f;
+        GripRots[i] =  z180;
         GripPoints[i++] << -0.0325f, -0.0435f, -0.015f;
+        // Back
+        GripRots[i] = y180;
+        GripPoints[i++] << -0.0325f, -0.0435f, 0.015f;
+        GripRots[i] = y180 * z180;
+        GripPoints[i++] << -0.0325f, -0.0435f, 0.015f;
 }
 
 #endif /* CHAIN_LINK_ROTATION_H_ */

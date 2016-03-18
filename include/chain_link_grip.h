@@ -33,6 +33,6 @@ static const char* template_voxel_grid_size_param = "chain_link_grip/template_vo
 //static const char* template_max_z_param = "chain_link_grip/template_max_z";
 
 // Alignment parameters
-static const char* align_max_iterations_param = "chain_link_grip/ailgn_max_iterations";
+static const char* align_max_iterations_param = "chain_link_grip/align_max_iterations";
 
 #endif /* CHAIN_LINK_GRIP_H_ */

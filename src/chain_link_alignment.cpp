@@ -52,7 +52,7 @@ FeatureCloud::loadInputCloud (const std::string &pcd_file)
   else { }
 }
 
-// Downsamples the point cloud
+// Downsample the point cloud
 void
 FeatureCloud::DownSample(float voxel_grid_size)
 {
@@ -154,7 +154,7 @@ FeatureCloud::RotateZ(float theta)
     pcl::transformPointCloud(*xyz_, *xyz_, transform);
 }
 
-// Applies the transform
+// Apply a transformation
 void
 FeatureCloud::Transform(Eigen::Matrix4f transform)
 {
@@ -347,17 +347,26 @@ TemplateAlignment::ApplyTransformations(Eigen::Matrix4f transforms[])
 //
 //
 
-// Base constructor
 TemplateAligner::TemplateAligner(char* objectTemplatesFile,
                                  float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
 {
-    Construct(objectTemplatesFile, xMin, xMax, yMin, yMax, zMin, zMax);
+    Construct(objectTemplatesFile);
+
+    // Target culling window
+    xMinTarget = xMin; xMaxTarget = xMax;
+    yMinTarget = yMin; yMaxTarget = yMax;
+    zMinTarget = zMin; zMaxTarget = zMax;
 }
 
 TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile,
                                  float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
 {
-    Construct(objectTemplatesFile, xMin, xMax, yMin, yMax, zMin, zMax);
+    Construct(objectTemplatesFile);
+
+    // Target culling window
+    xMinTarget = xMin; xMaxTarget = xMax;
+    yMinTarget = yMin; yMaxTarget = yMax;
+    zMinTarget = zMin; zMaxTarget = zMax;
 
     // Load the target cloud PCD file
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -373,7 +382,7 @@ TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFil
 
 TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFile)
 {
-    Construct(objectTemplatesFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget);
+    Construct(objectTemplatesFile);
 
     // Load the target cloud PCD file
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -389,23 +398,24 @@ TemplateAligner::TemplateAligner(char* objectTemplatesFile, char* targetCloudFil
 
 TemplateAligner::TemplateAligner(char* objectTemplatesFile)
 {
-    Construct(objectTemplatesFile, xMinTarget, xMaxTarget, yMinTarget, yMinTarget, zMinTarget, zMaxTarget);
+    Construct(objectTemplatesFile);
 }
 
 TemplateAligner::TemplateAligner() { }
 
+// Contructor so the compiler stops giving warnings for base constructors
 void
-TemplateAligner::Construct(char* objectTemplatesFile, float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
+TemplateAligner::Construct(char* objectTemplatesFile)
 {
-    SetParams();
-    setbuf(stdout, NULL);
+    SetParams(); // Set up the params here (again so the compiler stops giving warnings)
+    setbuf(stdout, NULL); // Force printf to print when told to
 
     // Load the object templates specified in the object_templates.txt file
     std::ifstream input_stream (objectTemplatesFile); //(argv[1]);
     object_templates.resize (0);
     std::string pcd_filename;
     int i = 1;
-    while (input_stream.good ())
+    while (input_stream.good ()) // Grab all the templates
     {
       std::getline (input_stream, pcd_filename);
       if (pcd_filename.empty () || pcd_filename.at (0) == '#') // Skip blank lines or comments
@@ -416,7 +426,7 @@ TemplateAligner::Construct(char* objectTemplatesFile, float xMin, float xMax, fl
           printf("Loading template %d... ", i++);
       }
       else { }
-      FeatureCloud template_cloud;
+      FeatureCloud template_cloud; // Load and preprocess the clouds
       template_cloud.loadInputCloud (pcd_filename);
       template_cloud.DownSample(voxel_grid_sizeTemplate);
       //template_cloud.Translate(xOffset, yOffset, zOffset); // Bring back to center
@@ -442,15 +452,11 @@ TemplateAligner::Construct(char* objectTemplatesFile, float xMin, float xMax, fl
     {
         template_align.addTemplateCloud (object_templates[i]);
     }
-
-    // Target culling window (slightly redundant for some constructors TODO)
-    xMinTarget = xMin; xMaxTarget = xMax;
-    yMinTarget = yMin; yMaxTarget = yMax;
-    zMinTarget = zMin; zMaxTarget = zMax;
 }
 
 TemplateAligner::~TemplateAligner() { }
 
+// Downsample and clip the target cloud
 void
 TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
 {
@@ -460,7 +466,7 @@ TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cl
         printf("Loading cloud of size %d points... ", ((int)cloud->size()));
     }
     else { }
-    target_cloud.setInputCloud (cloud);
+    target_cloud.setInputCloud (cloud); // Preprocess the cloud
     //target_cloud.DownSample(voxel_grid_sizeTarget);
     target_cloud.Clip(xMinTarget, xMaxTarget, yMinTarget, yMaxTarget, zMinTarget, zMaxTarget);
     target_cloud.processInput();
@@ -475,61 +481,7 @@ TemplateAligner::PreprocessTargetCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cl
     targetLoaded = true;
 }
 
-float
-TemplateAligner::GetTargetVoxelGridSize()
-{
-    return voxel_grid_sizeTarget;
-}
-
-void
-TemplateAligner::SetTargetVoxelGridSize(float size)
-{
-    voxel_grid_sizeTarget = size;
-    target_cloud.DownSample(voxel_grid_sizeTarget);
-}
-
-float
-TemplateAligner::GetTemplateVoxelGridSize()
-{
-    return voxel_grid_sizeTemplate;
-}
-
-void
-TemplateAligner::SetTemplateVoxelGridSize(float size)
-{
-    voxel_grid_sizeTemplate = size;
-    target_cloud.DownSample(voxel_grid_sizeTemplate);
-}
-
-void
-TemplateAligner::SetTargetWindow(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
-{
-    xMinTarget = xMin; xMaxTarget = xMax;
-    yMinTarget = yMin; yMaxTarget = yMax;
-    zMinTarget = zMin; zMaxTarget = zMax;
-}
-
-// Apply a series of transformations to each of the FeatureClouds
-void
-TemplateAligner::ApplyTransformations(Eigen::Matrix4f transforms[])
-{
-    template_align.ApplyTransformations(transforms);
-}
-
-// Adjust the number of max iterations
-void
-TemplateAligner::SetMaxIterations(int nr_iterations)
-{
-    template_align.SetMaxIterations (nr_iterations);
-}
-
-// Get the number of max iterations
-int
-TemplateAligner::GetMaxIterations()
-{
-    return template_align.GetMaxIterations();
-}
-
+// Assign and preprocess a target cloud; also write the filtered cloud to file if saving is enabled
 void
 TemplateAligner::SetTargetCloud(PointCloud::Ptr xyz)
 {
@@ -542,85 +494,144 @@ TemplateAligner::SetTargetCloud(PointCloud::Ptr xyz)
     else { }
 }
 
+// Get a pointer to the current target cloud
 PointCloud::Ptr
 TemplateAligner::GetTargetCloud()
 {
     return target_cloud.getPointCloud();
 }
 
+// Get the number of templates
 int
 TemplateAligner::GetNumTemplates()
 {
     return numTemplates;
 }
 
+// Get the nth template as a pointer to a point cloud
 PointCloud::Ptr
 TemplateAligner::GetTemplate(int n)
 {
     return object_templates[n].getPointCloud();
 }
 
+// Get a vector of the template point clouds aligned to their matches
 std::vector<PointCloud::Ptr>
 TemplateAligner::GetAlignedTemplates()
 {
     return aligned_templates;
 }
 
+// Get the most aligned template in aligned space
 PointCloud::Ptr
 TemplateAligner::GetMostAlignedTemplate()
 {
     return best_cloud;
 }
 
+// Get the transform used to map the template to the match in the target
 Eigen::Matrix4f
 TemplateAligner::GetBestTransform()
 {
     return best_transform;
 }
 
+// Get the index of the most aligned template in the vector
 int
 TemplateAligner::GetMostAlignedTemplateIndex()
 {
     return best_index;
 }
 
-bool
-TemplateAligner::GetSaveEnabled()
+// Adjust the number of max iterations for alignment attempts
+void
+TemplateAligner::SetMaxIterations(int nr_iterations)
 {
-    return saveEnabled;
+    template_align.SetMaxIterations (nr_iterations);
 }
 
+// Get the number of max iterations for alignment attempts
+int
+TemplateAligner::GetMaxIterations()
+{
+    return template_align.GetMaxIterations();
+}
+
+// Set the size of the target's voxel grid used for downsampling and downsample
+void
+TemplateAligner::SetTargetVoxelGridSize(float size)
+{
+    voxel_grid_sizeTarget = size;
+    target_cloud.DownSample(voxel_grid_sizeTarget);
+}
+
+// Get the size of the target's voxel grid used for downsampling
+float
+TemplateAligner::GetTargetVoxelGridSize()
+{
+    return voxel_grid_sizeTarget;
+}
+
+// Set the size of the templates' voxel grid used for downsampling and downsamples
+void
+TemplateAligner::SetTemplateVoxelGridSize(float size)
+{
+    voxel_grid_sizeTemplate = size;
+    target_cloud.DownSample(voxel_grid_sizeTemplate);
+}
+
+// Get the size of the templates' voxel grid used for downsampling
+float
+TemplateAligner::GetTemplateVoxelGridSize()
+{
+    return voxel_grid_sizeTemplate;
+}
+
+// Set the window for culling the target
+void
+TemplateAligner::SetTargetWindow(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
+{
+    xMinTarget = xMin; xMaxTarget = xMax;
+    yMinTarget = yMin; yMaxTarget = yMax;
+    zMinTarget = zMin; zMaxTarget = zMax;
+}
+
+// Set if saving of the filtered target cloud is enabled
 void
 TemplateAligner::SetSaveEnabled(bool enabled)
 {
     saveEnabled = enabled;
 }
 
-/*bool
-TemplateAligner::GetDisplayEnabled()
-{
-    return displayEnabled;
-}
-
-void
-TemplateAligner::SetDisplayEnabled(bool enabled)
-{
-    displayEnabled = enabled;
-}*/
-
+// Get if saving of the filtered target cloud is enabled
 bool
-TemplateAligner::GetOutputEnabled()
+TemplateAligner::GetSaveEnabled()
 {
-    return outputEnabled;
+    return saveEnabled;
 }
 
+// Set if printing output to the console is enabled
 void
 TemplateAligner::SetOutputEnabled(bool enabled)
 {
     outputEnabled = enabled;
 }
 
-// Find best object template aligned to the target scene
+// Get if printing output to the console is enabled
+bool
+TemplateAligner::GetOutputEnabled()
+{
+    return outputEnabled;
+}
+
+// Apply a series of transformations to each of the FeatureClouds
+void
+TemplateAligner::ApplyTransformations(Eigen::Matrix4f transforms[])
+{
+    template_align.ApplyTransformations(transforms);
+}
+
+// Find the best object template aligned to the target scene
 void
 TemplateAligner::Align()
 {
@@ -672,7 +683,7 @@ TemplateAligner::Align()
     else { }
 }
 
-// Make all object templates aligned to the target scene
+// Make all the object templates aligned to the target scene
 void
 TemplateAligner::AlignAll()
 {
@@ -684,7 +695,7 @@ TemplateAligner::AlignAll()
     }
     else { }
 
-    // Find the best template alignment
+    // Find the all template alignments
     std::vector<TemplateAlignment::Result, Eigen::aligned_allocator<TemplateAlignment::Result> > results =
             std::vector<TemplateAlignment::Result, Eigen::aligned_allocator<TemplateAlignment::Result> >();
     template_align.alignAll(results);
@@ -692,7 +703,6 @@ TemplateAligner::AlignAll()
 
     for (int i = 0; i < results.size(); i++)
     {
-        //int index = //
         const FeatureCloud &itemplate = object_templates[i];
         TemplateAlignment::Result alignment = results[i];
 
